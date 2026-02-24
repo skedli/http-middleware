@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Skedli\HttpMiddleware\Internal;
+namespace Skedli\HttpMiddleware\Internal\CorrelationId;
 
 use Skedli\HttpMiddleware\CorrelationIdMiddleware;
 use Skedli\HttpMiddleware\CorrelationIdProvider;
