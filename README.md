@@ -153,6 +153,38 @@ Output:
 2026-02-21T16:00:00+00:00 component=identity correlation_id=550e8400-e29b-41d4-a716-446655440000 level=INFO key=user.creating data={"email":"jo**@example.com"}
 ```
 
+<div id='error-handling'></div>
+
+## Error handling
+
+The library provides an `ErrorMiddleware` to catch uncaught exceptions during request processing. It transforms
+exceptions into structured JSON responses and optionally logs the error details.
+
+### Default usage
+
+Register the middleware to automatically catch exceptions. If the exception contains a valid HTTP error code (4xx or
+5xx), it is used, otherwise, it defaults to **500 Internal Server Error**.
+
+```php
+use Skedli\HttpMiddleware\ErrorMiddleware;
+
+$middleware = ErrorMiddleware::create()->build();
+```
+
+### Logging errors
+
+You can integrate with [tiny-blocks/logger](https://github.com/tiny-blocks/logger) to automatically log the exception
+message before the response is generated.
+
+```php
+use Skedli\HttpMiddleware\ErrorMiddleware;
+use TinyBlocks\Logger\Logger;
+
+$middleware = ErrorMiddleware::create()
+    ->withLogger(logger: $logger)
+    ->build();
+```
+
 <div id='license'></div>
 
 ## License
