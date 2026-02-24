@@ -11,7 +11,7 @@ use Psr\Http\Message\ServerRequestInterface;
 use Skedli\HttpMiddleware\CorrelationId;
 use Skedli\HttpMiddleware\CorrelationIdMiddleware;
 use Skedli\HttpMiddleware\CorrelationIdProvider;
-use Skedli\HttpMiddleware\Internal\UuidCorrelationId;
+use Skedli\HttpMiddleware\Internal\CorrelationId\UuidCorrelationId;
 use Test\Skedli\HttpMiddleware\Mocks\CapturingHandler;
 
 final class CorrelationIdMiddlewareTest extends TestCase

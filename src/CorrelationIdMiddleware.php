@@ -8,8 +8,8 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
-use Skedli\HttpMiddleware\Internal\CorrelationIdMiddlewareBuilder;
-use Skedli\HttpMiddleware\Internal\UuidCorrelationId;
+use Skedli\HttpMiddleware\Internal\CorrelationId\CorrelationIdMiddlewareBuilder;
+use Skedli\HttpMiddleware\Internal\CorrelationId\UuidCorrelationId;
 
 final readonly class CorrelationIdMiddleware implements MiddlewareInterface
 {
