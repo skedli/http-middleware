@@ -45,6 +45,8 @@
         "php": "^8.5",
         "ramsey/uuid": "^4.7",
         "psr/http-message": "^2.0",
+        "tiny-blocks/http": "^4.7",
+        "tiny-blocks/logger": "^1.0",
         "psr/http-server-handler": "^1.0",
         "psr/http-server-middleware": "^1.0"
     },
