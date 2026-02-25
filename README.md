@@ -16,9 +16,9 @@
         * [Automatic correlation ID binding](#automatic-correlation-id)
     * [Error handling](#error-handling)
         * [Default usage](#error-default-usage)
+        * [Error handling settings](#error-handling-settings)
         * [Logging errors](#logging-errors)
 * [License](#license)
-* [Contributing](#contributing)
 
 <div id='overview'></div>
 
@@ -206,7 +206,7 @@ $app->add(LogMiddleware::create(logger: $logger));
 
 #### What is logged
 
-The middleware logs two entries per request cycle — one for the incoming **request** and one for the outgoing **response
+The middleware logs two entries per request cycle, one for the incoming **request** and one for the outgoing **response
 **.
 
 **Request** is always logged at `info` level:
@@ -238,12 +238,14 @@ level=INFO key=response data={"method":"GET","uri":"/api/health","status_code":2
 #### Automatic correlation ID binding
 
 When used together with the `CorrelationIdMiddleware`, the `LogMiddleware` automatically binds the correlation ID
-to the logger context. No additional configuration is needed — just register both middleware in the correct order:
+to the logger context. No additional configuration is needed, just register both middleware in the correct order:
 
 ```php
 use Skedli\HttpMiddleware\CorrelationIdMiddleware;
 use Skedli\HttpMiddleware\LogMiddleware;
 
+// In Slim 4, middleware executes in LIFO order (last added = first to run).
+// CorrelationIdMiddleware must run before LogMiddleware.
 $app->add(LogMiddleware::create(logger: $logger));
 $app->add(CorrelationIdMiddleware::create()->build());
 ```
@@ -261,8 +263,8 @@ If the `CorrelationIdMiddleware` is not registered, the `LogMiddleware` works no
 
 ### Error handling
 
-The library provides an `ErrorMiddleware` to catch uncaught exceptions during request processing. It transforms
-exceptions into structured JSON responses and optionally logs the error details.
+The `ErrorMiddleware` catches uncaught exceptions during request processing and transforms them into structured JSON
+responses. Error logging and response detail exposure are fully configurable through `ErrorHandlingSettings`.
 
 <div id='error-default-usage'></div>
 
@@ -271,26 +273,120 @@ exceptions into structured JSON responses and optionally logs the error details.
 Register the middleware to automatically catch exceptions. If the exception contains a valid HTTP error code (4xx or
 5xx), it is used, otherwise, it defaults to **500 Internal Server Error**.
 
+By default, error details are not displayed in the response and errors are not logged.
+
 ```php
 use Skedli\HttpMiddleware\ErrorMiddleware;
 
 $middleware = ErrorMiddleware::create()->build();
 ```
 
+Response body:
+
+```json
+{
+    "error": "Unexpected database error"
+}
+```
+
+<div id='error-handling-settings'></div>
+
+#### Error handling settings
+
+Use `ErrorHandlingSettings` to control how errors are displayed and logged:
+
+| Setting               | Default | Description                                                                |
+|-----------------------|---------|----------------------------------------------------------------------------|
+| `displayErrorDetails` | `false` | Includes exception class, file, line, and stack trace in the response body |
+| `logErrors`           | `false` | Enables logging of exceptions when a logger is provided                    |
+| `logErrorDetails`     | `false` | Includes exception class, file, line, and stack trace in the log context   |
+
+**Development** full visibility in response and logs:
+
+```php
+use Skedli\HttpMiddleware\ErrorMiddleware;
+use Skedli\HttpMiddleware\Internal\Error\ErrorHandlingSettings;
+
+$middleware = ErrorMiddleware::create()
+    ->withLogger(logger: $logger)
+    ->withSettings(settings: ErrorHandlingSettings::from(
+        logErrors: true,
+        logErrorDetails: true,
+        displayErrorDetails: true
+    ))
+    ->build();
+```
+
+Response body:
+
+```json
+{
+    "error": "Unexpected database error",
+    "exception": "RuntimeException",
+    "file": "/app/src/Application/Handlers/UserCreatingHandler.php",
+    "line": 42,
+    "trace": [
+        "#0 /app/src/Driver/Http/Endpoints/User/CreateUser.php(25): ...",
+        "#1 /app/vendor/slim/slim/Slim/Handlers/Strategies/RequestResponseArgs.php(30): ..."
+    ]
+}
+```
+
+**Production** log with details, minimal response:
+
+```php
+use Skedli\HttpMiddleware\ErrorMiddleware;
+use Skedli\HttpMiddleware\Internal\Error\ErrorHandlingSettings;
+
+$middleware = ErrorMiddleware::create()
+    ->withLogger(logger: $logger)
+    ->withSettings(settings: ErrorHandlingSettings::from(
+        logErrors: true,
+        logErrorDetails: true,
+        displayErrorDetails: false
+    ))
+    ->build();
+```
+
+Response body:
+
+```json
+{
+    "error": "Unexpected database error"
+}
+```
+
+Log output:
+
+```
+level=ERROR key=Unexpected database error data={"exception":"RuntimeException","file":"/app/src/...","line":42,"trace":"#0 /app/src/..."}
+```
+
 <div id='logging-errors'></div>
 
 #### Logging errors
 
-You can integrate with [tiny-blocks/logger](https://github.com/tiny-blocks/logger) to automatically log the exception
-message before the response is generated.
+To enable error logging, provide a [tiny-blocks/logger](https://github.com/tiny-blocks/logger) instance **and** enable
+`logErrors` in the settings. The logger alone is not sufficient, `logErrors` must be explicitly enabled.
 
 ```php
 use Skedli\HttpMiddleware\ErrorMiddleware;
-use TinyBlocks\Logger\Logger;
+use Skedli\HttpMiddleware\Internal\Error\ErrorHandlingSettings;
 
 $middleware = ErrorMiddleware::create()
     ->withLogger(logger: $logger)
+    ->withSettings(settings: ErrorHandlingSettings::from(
+        logErrors: true,
+        logErrorDetails: false,
+        displayErrorDetails: false
+    ))
     ->build();
+```
+
+Log output:
+
+```
+level=ERROR key=Unexpected database error data={}
 ```
 
 <div id='license'></div>
@@ -298,10 +394,3 @@ $middleware = ErrorMiddleware::create()
 ## License
 
 HTTP Middleware is licensed under [MIT](LICENSE).
-
-<div id='contributing'></div>
-
-## Contributing
-
-Please follow the [contributing guidelines](https://github.com/skedli/http-middleware/blob/main/CONTRIBUTING.md) to
-contribute to the project.
