@@ -42,11 +42,11 @@ final readonly class ErrorMiddleware implements MiddlewareInterface
         try {
             return $handler->handle($request);
         } catch (Throwable $exception) {
-            $this->errorLogger->log(exception: $exception);
+            $this->errorLogger->log(exception: $exception, request: $request);
 
             $exceptionCode = $exception->getCode();
             $code = Code::isErrorCode(code: $exceptionCode)
-                ? Code::from($exceptionCode)
+                ? Code::from(value: $exceptionCode)
                 : Code::INTERNAL_SERVER_ERROR;
 
             $body = $this->errorResponseBody->build(exception: $exception);

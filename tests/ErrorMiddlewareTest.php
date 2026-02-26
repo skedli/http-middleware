@@ -10,9 +10,11 @@ use GuzzleHttp\Psr7\ServerRequest;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Server\RequestHandlerInterface;
 use Skedli\HttpMiddleware\ErrorMiddleware;
+use Skedli\HttpMiddleware\Internal\CorrelationId\UuidCorrelationId;
 use Skedli\HttpMiddleware\Internal\Error\ErrorHandlingSettings;
 use Test\Skedli\HttpMiddleware\Mocks\CapturingHandler;
 use TinyBlocks\Http\Code;
+use TinyBlocks\Logger\LogContext;
 use TinyBlocks\Logger\Logger;
 
 final class ErrorMiddlewareTest extends TestCase
@@ -153,11 +155,20 @@ final class ErrorMiddlewareTest extends TestCase
         $handler->method('handle')
             ->willThrowException(new Exception($exceptionMessage));
 
-        /** @And a logger that expects to receive only the error message */
+        /** @And a logger that expects the error key with only the exception message in context */
         $logger = $this->createMock(Logger::class);
         $logger->expects(self::once())
             ->method('error')
-            ->with($exceptionMessage, self::isEmpty());
+            ->with(
+                'error',
+                self::callback(function (array $context) use ($exceptionMessage): bool {
+                    return $context['message'] === $exceptionMessage
+                        && !isset($context['exception'])
+                        && !isset($context['file'])
+                        && !isset($context['line'])
+                        && !isset($context['trace']);
+                })
+            );
 
         /** @And a middleware with logErrors enabled but logErrorDetails disabled */
         $middleware = ErrorMiddleware::create()
@@ -172,8 +183,10 @@ final class ErrorMiddlewareTest extends TestCase
             ->build();
 
         /** @When the middleware processes the request */
-        $middleware->process($request, $handler);
-        /** @Then the error message should be logged */
+        $actual = $middleware->process($request, $handler);
+
+        /** @Then the response should be 500 */
+        self::assertSame(Code::INTERNAL_SERVER_ERROR->value, $actual->getStatusCode());
     }
 
     public function testLogsErrorDetailsWhenLogErrorDetailsIsEnabled(): void
@@ -187,14 +200,15 @@ final class ErrorMiddlewareTest extends TestCase
         $handler->method('handle')
             ->willThrowException(new Exception($exceptionMessage));
 
-        /** @And a logger that expects to receive the error message with detailed context */
+        /** @And a logger that expects the error key with the exception message and details in context */
         $logger = $this->createMock(Logger::class);
         $logger->expects(self::once())
             ->method('error')
             ->with(
-                $exceptionMessage,
-                self::callback(function (array $context): bool {
-                    return isset($context['exception'], $context['file'], $context['line'], $context['trace'])
+                'error',
+                self::callback(function (array $context) use ($exceptionMessage): bool {
+                    return $context['message'] === $exceptionMessage
+                        && isset($context['exception'], $context['file'], $context['line'], $context['trace'])
                         && $context['exception'] === Exception::class
                         && is_string($context['file'])
                         && is_int($context['line'])
@@ -215,8 +229,10 @@ final class ErrorMiddlewareTest extends TestCase
             ->build();
 
         /** @When the middleware processes the request */
-        $middleware->process($request, $handler);
-        /** @Then the error details should be logged */
+        $actual = $middleware->process($request, $handler);
+
+        /** @Then the response should be 500 */
+        self::assertSame(Code::INTERNAL_SERVER_ERROR->value, $actual->getStatusCode());
     }
 
     public function testResponseBodyContainsOnlyErrorMessageByDefault(): void
@@ -295,11 +311,17 @@ final class ErrorMiddlewareTest extends TestCase
         $handler->method('handle')
             ->willThrowException(new Exception($exceptionMessage));
 
-        /** @And a logger that expects only the error message without context */
+        /** @And a logger that expects the error key with only the exception message in context */
         $logger = $this->createMock(Logger::class);
         $logger->expects(self::once())
             ->method('error')
-            ->with($exceptionMessage, self::isEmpty());
+            ->with(
+                'error',
+                self::callback(function (array $context) use ($exceptionMessage): bool {
+                    return $context['message'] === $exceptionMessage
+                        && !isset($context['exception']);
+                })
+            );
 
         /** @And a middleware with displayErrorDetails enabled but logErrorDetails disabled */
         $middleware = ErrorMiddleware::create()
@@ -333,14 +355,15 @@ final class ErrorMiddlewareTest extends TestCase
         $handler->method('handle')
             ->willThrowException(new Exception($exceptionMessage));
 
-        /** @And a logger that expects error details in context */
+        /** @And a logger that expects the error key with details in context */
         $logger = $this->createMock(Logger::class);
         $logger->expects(self::once())
             ->method('error')
             ->with(
-                $exceptionMessage,
-                self::callback(function (array $context): bool {
-                    return isset($context['exception']);
+                'error',
+                self::callback(function (array $context) use ($exceptionMessage): bool {
+                    return $context['message'] === $exceptionMessage
+                        && isset($context['exception']);
                 })
             );
 
@@ -451,7 +474,123 @@ final class ErrorMiddlewareTest extends TestCase
             ->build();
 
         /** @When the middleware processes the request */
-        $middleware->process($request, $handler);
-        /** @Then nothing should be logged */
+        $actual = $middleware->process($request, $handler);
+
+        /** @Then the response should be 500 and nothing should be logged */
+        self::assertSame(Code::INTERNAL_SERVER_ERROR->value, $actual->getStatusCode());
+    }
+
+    public function testLogsErrorWithCorrelationIdWhenPresentInRequest(): void
+    {
+        /** @Given a request with a correlation ID attribute */
+        $correlationId = UuidCorrelationId::from(value: '550e8400-e29b-41d4-a716-446655440000');
+        $request = new ServerRequest('GET', '/not-found')
+            ->withAttribute('correlationId', $correlationId);
+
+        /** @And a handler that throws an exception */
+        $exceptionMessage = 'Resource not found';
+        $handler = $this->createStub(RequestHandlerInterface::class);
+        $handler->method('handle')
+            ->willThrowException(new Exception($exceptionMessage));
+
+        /** @And a correlated logger that expects the error key with the exception message in context */
+        $correlatedLogger = $this->createMock(Logger::class);
+        $correlatedLogger->expects(self::once())
+            ->method('error')
+            ->with(
+                'error',
+                self::callback(function (array $context) use ($exceptionMessage): bool {
+                    return $context['message'] === $exceptionMessage
+                        && !isset($context['exception']);
+                })
+            );
+
+        /** @And a base logger that returns a correlated logger when withContext is called */
+        $logger = $this->createMock(Logger::class);
+        $logger->expects(self::once())
+            ->method('withContext')
+            ->with(
+                self::callback(function (LogContext $context) use ($correlationId): bool {
+                    return $context->correlationId === $correlationId->toString();
+                })
+            )
+            ->willReturn($correlatedLogger);
+
+        /** @And a middleware with logErrors enabled */
+        $middleware = ErrorMiddleware::create()
+            ->withLogger(logger: $logger)
+            ->withSettings(
+                settings: ErrorHandlingSettings::from(
+                    logErrors: true,
+                    logErrorDetails: false,
+                    displayErrorDetails: false
+                )
+            )
+            ->build();
+
+        /** @When the middleware processes the request */
+        $actual = $middleware->process($request, $handler);
+
+        /** @Then the response should be 500 */
+        self::assertSame(Code::INTERNAL_SERVER_ERROR->value, $actual->getStatusCode());
+    }
+
+    public function testLogsErrorDetailsWithCorrelationIdWhenPresentInRequest(): void
+    {
+        /** @Given a request with a correlation ID attribute */
+        $correlationId = UuidCorrelationId::from(value: '660e8400-e29b-41d4-a716-446655440000');
+        $request = new ServerRequest('POST', '/fail')
+            ->withAttribute('correlationId', $correlationId);
+
+        /** @And a handler that throws an exception */
+        $exceptionMessage = 'Something broke';
+        $handler = $this->createStub(RequestHandlerInterface::class);
+        $handler->method('handle')
+            ->willThrowException(new Exception($exceptionMessage));
+
+        /** @And a correlated logger that expects the error key with the exception message and details in context */
+        $correlatedLogger = $this->createMock(Logger::class);
+        $correlatedLogger->expects(self::once())
+            ->method('error')
+            ->with(
+                'error',
+                self::callback(function (array $context) use ($exceptionMessage): bool {
+                    return $context['message'] === $exceptionMessage
+                        && isset($context['exception'], $context['file'], $context['line'], $context['trace'])
+                        && $context['exception'] === Exception::class
+                        && is_string($context['file'])
+                        && is_int($context['line'])
+                        && is_string($context['trace']);
+                })
+            );
+
+        /** @And a base logger that returns a correlated logger when withContext is called */
+        $logger = $this->createMock(Logger::class);
+        $logger->expects(self::once())
+            ->method('withContext')
+            ->with(
+                self::callback(function (LogContext $context) use ($correlationId): bool {
+                    return $context->correlationId === $correlationId->toString();
+                })
+            )
+            ->willReturn($correlatedLogger);
+
+        /** @And a middleware with logErrors and logErrorDetails enabled */
+        $middleware = ErrorMiddleware::create()
+            ->withLogger(logger: $logger)
+            ->withSettings(
+                settings: ErrorHandlingSettings::from(
+                    logErrors: true,
+                    logErrorDetails: true,
+                    displayErrorDetails: false
+                )
+            )
+            ->build();
+
+        /** @When the middleware processes the request */
+        $actual = $middleware->process($request, $handler);
+
+        /** @Then the response should be 500 */
+        self::assertSame(Code::INTERNAL_SERVER_ERROR->value, $actual->getStatusCode());
     }
 }
