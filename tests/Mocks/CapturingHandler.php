@@ -8,6 +8,8 @@ use GuzzleHttp\Psr7\Response;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use Skedli\HttpMiddleware\AuthenticatedUser;
+use Skedli\HttpMiddleware\AuthenticationMiddleware;
 use Skedli\HttpMiddleware\CorrelationId;
 
 final class CapturingHandler implements RequestHandlerInterface
@@ -28,5 +30,11 @@ final class CapturingHandler implements RequestHandlerInterface
     {
         $attribute = $this->capturedRequest?->getAttribute('correlationId');
         return $attribute instanceof CorrelationId ? $attribute : null;
+    }
+
+    public function capturedAuthenticatedUser(): ?AuthenticatedUser
+    {
+        $attribute = $this->capturedRequest?->getAttribute(AuthenticationMiddleware::AUTHENTICATED_USER_ATTRIBUTE);
+        return $attribute instanceof AuthenticatedUser ? $attribute : null;
     }
 }

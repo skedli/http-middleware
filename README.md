@@ -18,6 +18,13 @@
         * [Default usage](#error-default-usage)
         * [Error handling settings](#error-handling-settings)
         * [Logging errors](#logging-errors)
+    * [Authentication](#authentication)
+        * [Default usage](#auth-default-usage)
+        * [Supported algorithms](#supported-algorithms)
+        * [Accessing the authenticated user](#accessing-the-authenticated-user)
+        * [Custom token decoder](#custom-token-decoder)
+        * [Custom authenticated user](#custom-authenticated-user)
+        * [Builder precedence](#builder-precedence)
 * [License](#license)
 
 <div id='overview'></div>
@@ -25,7 +32,7 @@
 ## Overview
 
 Provides PSR-15 middleware for HTTP requests, including correlation ID propagation, structured request/response logging,
-and error handling.
+error handling, and stateless JWT authentication.
 
 Built on top of [PSR-15](https://www.php-fig.org/psr/psr-15) and [PSR-7](https://www.php-fig.org/psr/psr-7), the
 middleware can be used with any framework that supports the `MiddlewareInterface` standard.
@@ -399,6 +406,243 @@ correlation_id=550e8400-e29b-41d4-a716-446655440000 level=ERROR key=error data={
 ```
 
 If the `CorrelationIdMiddleware` is not registered, the `ErrorMiddleware` works normally without the correlation ID.
+
+<div id='authentication'></div>
+
+### Authentication
+
+The `AuthenticationMiddleware` enforces stateless token-based authentication on incoming requests. It extracts the
+Bearer token from the `Authorization` header, validates it using a `TokenDecoder`, and propagates the authenticated
+user context as a request attribute.
+
+No database access is performed validation relies exclusively on the token's cryptographic signature and its claims.
+
+<div id='auth-default-usage'></div>
+
+#### Default usage
+
+Configure the middleware with a signing algorithm and key material. The built-in `JwtTokenDecoder` handles JWT
+validation using [firebase/php-jwt](https://github.com/firebase/php-jwt).
+
+**With RSA (asymmetric):**
+
+```php
+use Skedli\HttpMiddleware\AuthenticationMiddleware;
+use Skedli\HttpMiddleware\SigningAlgorithm;
+
+$middleware = AuthenticationMiddleware::create()
+    ->withAlgorithm(algorithm: SigningAlgorithm::RS256)
+    ->withKeyMaterial(keyMaterial: $publicKey)
+    ->build();
+```
+
+**With HMAC (symmetric):**
+
+```php
+use Skedli\HttpMiddleware\AuthenticationMiddleware;
+use Skedli\HttpMiddleware\SigningAlgorithm;
+
+$middleware = AuthenticationMiddleware::create()
+    ->withAlgorithm(algorithm: SigningAlgorithm::HS256)
+    ->withKeyMaterial(keyMaterial: 'your-shared-secret-key')
+    ->build();
+```
+
+In a Slim 4 application:
+
+```php
+use Skedli\HttpMiddleware\AuthenticationMiddleware;
+use Skedli\HttpMiddleware\SigningAlgorithm;
+
+$app->add(
+    AuthenticationMiddleware::create()
+        ->withAlgorithm(algorithm: SigningAlgorithm::RS256)
+        ->withKeyMaterial(keyMaterial: $publicKey)
+        ->build()
+);
+```
+
+When authentication fails, the middleware returns a `401 Unauthorized` response:
+
+```json
+{
+    "code": "UNAUTHORIZED",
+    "message": "Token has expired."
+}
+```
+
+Possible error messages:
+
+| Message                                        | Cause                                                  |
+|------------------------------------------------|--------------------------------------------------------|
+| `Missing Authorization header.`                | The request has no `Authorization` header              |
+| `Authorization header must use Bearer scheme.` | The header does not start with `Bearer `               |
+| `Bearer token is empty.`                       | The header is `Bearer` with no token value             |
+| `Token is invalid or could not be decoded.`    | The token is malformed or the signature does not match |
+| `Token has expired.`                           | The token `exp` claim is in the past                   |
+| `Token is missing the subject (sub) claim.`    | The token has no `sub` claim                           |
+
+<div id='supported-algorithms'></div>
+
+#### Supported algorithms
+
+The `SigningAlgorithm` enum defines the supported algorithms:
+
+| Algorithm | Type  | Use case                        |
+|-----------|-------|---------------------------------|
+| `RS256`   | RSA   | Asymmetric — public/private key |
+| `RS384`   | RSA   | Asymmetric — public/private key |
+| `RS512`   | RSA   | Asymmetric — public/private key |
+| `HS256`   | HMAC  | Symmetric — shared secret       |
+| `HS384`   | HMAC  | Symmetric — shared secret       |
+| `HS512`   | HMAC  | Symmetric — shared secret       |
+| `ES256`   | ECDSA | Asymmetric — elliptic curve     |
+| `ES384`   | ECDSA | Asymmetric — elliptic curve     |
+
+<div id='accessing-the-authenticated-user'></div>
+
+#### Accessing the authenticated user
+
+On successful authentication, the middleware injects an `AuthenticatedUser` instance as a request attribute. The
+`AuthenticatedUser` is an interface with three methods:
+
+```php
+use Psr\Http\Message\ServerRequestInterface;
+use Skedli\HttpMiddleware\AuthenticatedUser;
+use Skedli\HttpMiddleware\AuthenticationMiddleware;
+
+/** @var AuthenticatedUser $user */
+$user = $request->getAttribute(AuthenticationMiddleware::AUTHENTICATED_USER_ATTRIBUTE);
+
+$user->userId();    # "e3b0c442-98fc-1c14-b39f-f32d831cb27a"
+$user->issuedAt();  # 1740000000
+$user->expiresAt(); # 1740003600
+```
+
+<div id='custom-token-decoder'></div>
+
+#### Custom token decoder
+
+Implement the `TokenDecoder` interface to replace the built-in JWT validation with your own strategy. The decoder
+must validate the token locally (stateless), without performing any network call or database query.
+
+```php
+use Skedli\HttpMiddleware\AuthenticatedUser;
+use Skedli\HttpMiddleware\TokenDecoder;
+use Skedli\HttpMiddleware\Internal\Authentication\TokenValidationFailed;
+
+final readonly class OpaqueTokenDecoder implements TokenDecoder
+{
+    public function __construct(private TokenStore $tokenStore)
+    {
+    }
+
+    public function decode(string $token): AuthenticatedUser
+    {
+        $claims = $this->tokenStore->lookup($token);
+
+        if ($claims === null) {
+            throw TokenValidationFailed::withReason(reason: 'Token not found.');
+        }
+
+        return MyAuthenticatedUser::from(claims: $claims);
+    }
+}
+```
+
+Then configure the middleware with the custom decoder:
+
+```php
+use Skedli\HttpMiddleware\AuthenticationMiddleware;
+
+$middleware = AuthenticationMiddleware::create()
+    ->withTokenDecoder(tokenDecoder: new OpaqueTokenDecoder($tokenStore))
+    ->build();
+```
+
+<div id='custom-authenticated-user'></div>
+
+#### Custom authenticated user
+
+The `AuthenticatedUser` is an interface, so you can extend it with additional claims specific to your domain.
+Return your custom implementation from your `TokenDecoder`:
+
+```php
+use Skedli\HttpMiddleware\AuthenticatedUser;
+
+final readonly class TenantAwareUser implements AuthenticatedUser
+{
+    public function __construct(
+        private string $userId,
+        private int $issuedAt,
+        private int $expiresAt,
+        private string $tenantId,
+        private array $roles
+    ) {
+    }
+
+    public function userId(): string
+    {
+        return $this->userId;
+    }
+
+    public function issuedAt(): int
+    {
+        return $this->issuedAt;
+    }
+
+    public function expiresAt(): int
+    {
+        return $this->expiresAt;
+    }
+
+    public function tenantId(): string
+    {
+        return $this->tenantId;
+    }
+
+    public function roles(): array
+    {
+        return $this->roles;
+    }
+}
+```
+
+Access the extended claims in your handler:
+
+```php
+use Psr\Http\Message\ServerRequestInterface;
+use Skedli\HttpMiddleware\AuthenticationMiddleware;
+
+/** @var TenantAwareUser $user */
+$user = $request->getAttribute(AuthenticationMiddleware::AUTHENTICATED_USER_ATTRIBUTE);
+
+$user->userId();   # "e3b0c442-98fc-1c14-b39f-f32d831cb27a"
+$user->tenantId(); # "tenant-42"
+$user->roles();    # ["admin", "billing"]
+```
+
+<div id='builder-precedence'></div>
+
+#### Builder precedence
+
+When both a custom `TokenDecoder` and key material are provided, the custom decoder **always takes precedence**.
+The key material and algorithm are ignored:
+
+```php
+use Skedli\HttpMiddleware\AuthenticationMiddleware;
+use Skedli\HttpMiddleware\SigningAlgorithm;
+
+// The custom decoder wins — key material and algorithm are ignored.
+$middleware = AuthenticationMiddleware::create()
+    ->withAlgorithm(algorithm: SigningAlgorithm::RS256)
+    ->withKeyMaterial(keyMaterial: $publicKey)
+    ->withTokenDecoder(tokenDecoder: $customDecoder)
+    ->build();
+```
+
+Building the middleware without a `TokenDecoder` or key material throws a `TokenValidationFailed` exception.
+Using key material without an algorithm also throws.
 
 <div id='license'></div>
 
