@@ -16,7 +16,9 @@
         "customPath": "./vendor/bin/phpunit"
     },
     "mutators": {
-        "@default": true
+        "@default": true,
+        "ArrayOneItem": false,
+        "UnwrapFinally": false
     },
     "minCoveredMsi": 100,
     "testFramework": "phpunit"

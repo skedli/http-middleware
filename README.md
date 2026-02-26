@@ -516,7 +516,7 @@ When authentication fails, the middleware returns a `401 Unauthorized` response:
 
 ```json
 {
-    "code": "UNAUTHORIZED",
+    "code": "TOKEN_VALIDATION_FAILED",
     "message": "Token has expired."
 }
 ```

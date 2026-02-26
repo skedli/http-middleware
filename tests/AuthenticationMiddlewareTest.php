@@ -103,7 +103,7 @@ final class AuthenticationMiddlewareTest extends TestCase
 
         /** @And the response body should indicate the missing header */
         $body = json_decode((string)$response->getBody(), true);
-        self::assertSame('UNAUTHORIZED', $body['code']);
+        self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
         self::assertSame('Missing Authorization header.', $body['message']);
     }
 
@@ -132,7 +132,7 @@ final class AuthenticationMiddlewareTest extends TestCase
 
         /** @And the response body should indicate the wrong scheme */
         $body = json_decode((string)$response->getBody(), true);
-        self::assertSame('UNAUTHORIZED', $body['code']);
+        self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
         self::assertSame('Authorization header must use Bearer scheme.', $body['message']);
     }
 
@@ -161,7 +161,7 @@ final class AuthenticationMiddlewareTest extends TestCase
 
         /** @And the response body should indicate the token is empty */
         $body = json_decode((string)$response->getBody(), true);
-        self::assertSame('UNAUTHORIZED', $body['code']);
+        self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
         self::assertSame('Bearer token is empty.', $body['message']);
     }
 
@@ -190,7 +190,7 @@ final class AuthenticationMiddlewareTest extends TestCase
 
         /** @And the response body should indicate the token is invalid */
         $body = json_decode((string)$response->getBody(), true);
-        self::assertSame('UNAUTHORIZED', $body['code']);
+        self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
         self::assertSame('Token is invalid or could not be decoded.', $body['message']);
     }
 
@@ -230,7 +230,7 @@ final class AuthenticationMiddlewareTest extends TestCase
 
         /** @And the response body should indicate the token expired */
         $body = json_decode((string)$response->getBody(), true);
-        self::assertSame('UNAUTHORIZED', $body['code']);
+        self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
         self::assertSame('Token has expired.', $body['message']);
     }
 
@@ -278,7 +278,7 @@ final class AuthenticationMiddlewareTest extends TestCase
 
         /** @And the response body should indicate validation failure */
         $body = json_decode((string)$response->getBody(), true);
-        self::assertSame('UNAUTHORIZED', $body['code']);
+        self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
         self::assertSame('Token is invalid or could not be decoded.', $body['message']);
     }
 
@@ -317,7 +317,7 @@ final class AuthenticationMiddlewareTest extends TestCase
 
         /** @And the response body should indicate the missing claim */
         $body = json_decode((string)$response->getBody(), true);
-        self::assertSame('UNAUTHORIZED', $body['code']);
+        self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
         self::assertSame('Token is missing the subject (sub) claim.', $body['message']);
     }
 
@@ -533,53 +533,55 @@ final class AuthenticationMiddlewareTest extends TestCase
 
         /** @And the response body should contain the custom error message */
         $body = json_decode((string)$response->getBody(), true);
-        self::assertSame('UNAUTHORIZED', $body['code']);
+        self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
         self::assertSame('Custom validation failed.', $body['message']);
     }
 
-    public function testAuthenticatesValidTokenUsingJwksUrl(): void
+    public function testAuthenticatesValidTokenUsingJwksUrlWithDefaultRs256(): void
     {
         /** @Given a fake JWKS server serving the test public key */
         $jwksUrl = JwksServerMock::start(publicKeyPem: $this->publicKey);
 
-        /** @And a valid JWT token signed with the matching private key */
-        $issuedAt = time();
-        $expiresAt = $issuedAt + 3600;
-        $userId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+        try {
+            /** @And a valid JWT token signed with the matching private key */
+            $issuedAt = time();
+            $expiresAt = $issuedAt + 3600;
+            $userId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
 
-        $token = JWT::encode(
-            payload: ['sub' => $userId, 'iat' => $issuedAt, 'exp' => $expiresAt],
-            key: $this->privateKey,
-            alg: 'RS256'
-        );
+            $token = JWT::encode(
+                payload: ['sub' => $userId, 'iat' => $issuedAt, 'exp' => $expiresAt],
+                key: $this->privateKey,
+                alg: 'RS256'
+            );
 
-        /** @And a request with the valid Bearer token */
-        $request = new ServerRequest('GET', '/', ['Authorization' => "Bearer $token"]);
+            /** @And a request with the valid Bearer token */
+            $request = new ServerRequest('GET', '/', ['Authorization' => "Bearer $token"]);
 
-        /** @And a middleware configured with the JWKS URL */
-        $middleware = AuthenticationMiddleware::create()
-            ->withJwksUrl(jwksUrl: $jwksUrl)
-            ->build();
+            /** @And a middleware configured with only the JWKS URL (no explicit algorithm) */
+            $middleware = AuthenticationMiddleware::create()
+                ->withJwksUrl(jwksUrl: $jwksUrl)
+                ->build();
 
-        /** @And a handler that captures the request */
-        $handler = new CapturingHandler();
+            /** @And a handler that captures the request */
+            $handler = new CapturingHandler();
 
-        /** @When the middleware processes the request */
-        $response = $middleware->process($request, $handler);
+            /** @When the middleware processes the request */
+            $response = $middleware->process($request, $handler);
 
-        /** @Then the response should be 200 OK */
-        self::assertSame(Code::OK->value, $response->getStatusCode());
+            /** @Then the response should be 200 OK (RS256 was inferred as default) */
+            self::assertSame(Code::OK->value, $response->getStatusCode());
 
-        /** @And the authenticated user should be propagated as a request attribute */
-        $authenticatedUser = $handler->capturedAuthenticatedUser();
+            /** @And the authenticated user should be propagated as a request attribute */
+            $authenticatedUser = $handler->capturedAuthenticatedUser();
 
-        self::assertNotNull($authenticatedUser);
-        self::assertInstanceOf(AuthenticatedUser::class, $authenticatedUser);
-        self::assertSame($userId, $authenticatedUser->userId());
-        self::assertSame($issuedAt, $authenticatedUser->issuedAt());
-        self::assertSame($expiresAt, $authenticatedUser->expiresAt());
-
-        JwksServerMock::stop();
+            self::assertNotNull($authenticatedUser);
+            self::assertInstanceOf(AuthenticatedUser::class, $authenticatedUser);
+            self::assertSame($userId, $authenticatedUser->userId());
+            self::assertSame($issuedAt, $authenticatedUser->issuedAt());
+            self::assertSame($expiresAt, $authenticatedUser->expiresAt());
+        } finally {
+            JwksServerMock::stop();
+        }
     }
 
     public function testJwksUrlDefaultsToRs256Algorithm(): void

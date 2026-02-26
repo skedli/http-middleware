@@ -10,7 +10,7 @@ final readonly class JwksFetcher
 {
     public static function fetchFrom(string $url): array
     {
-        $errorMessage = null;
+        $errorMessage = '';
 
         set_error_handler(static function (int $severity, string $message) use (&$errorMessage): true {
             $errorMessage = $message;
@@ -25,7 +25,7 @@ final readonly class JwksFetcher
 
         if ($json === false) {
             throw TokenValidationFailed::withReason(
-                reason: sprintf('Failed to fetch JWKS from <%s>: %s', $url, $errorMessage ?? 'unknown error')
+                reason: sprintf('Failed to fetch JWKS from <%s>: %s', $url, $errorMessage)
             );
         }
 

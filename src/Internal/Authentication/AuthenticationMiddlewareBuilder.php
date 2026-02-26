@@ -47,8 +47,8 @@ final class AuthenticationMiddlewareBuilder
         }
 
         if (!is_null($this->jwksUrl)) {
+            $this->algorithm = SigningAlgorithm::RS256;
             $this->keyMaterial = JwksPublicKeyResolver::from(jwksUrl: $this->jwksUrl)->resolve();
-            $this->algorithm ??= SigningAlgorithm::RS256;
         }
 
         if (is_null($this->keyMaterial)) {
