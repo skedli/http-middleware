@@ -71,6 +71,7 @@
         "test-file": "php ./vendor/bin/phpunit --configuration phpunit.xml --no-coverage --filter",
         "mutation-test": "php ./vendor/bin/infection --threads=max --logger-html=report/coverage/mutation-report.html --coverage=report/coverage",
         "test-no-coverage": "php ./vendor/bin/phpunit --configuration phpunit.xml --no-coverage tests",
+        "test-no-mutation": "php -d memory_limit=2G ./vendor/bin/phpunit --configuration phpunit.xml tests-no-mutation",
         "review": [
             "@phpcs",
             "@phpstan"
@@ -81,6 +82,9 @@
         ],
         "tests-no-coverage": [
             "@test-no-coverage"
+        ],
+        "tests-no-mutation": [
+            "@test"
         ]
     }
 }
