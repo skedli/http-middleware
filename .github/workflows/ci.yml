@@ -84,4 +84,4 @@ jobs:
           path: .
 
       - name: Run tests
-        run: composer test-no-mutation
+        run: composer tests-no-mutation
