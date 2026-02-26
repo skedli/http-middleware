@@ -20,6 +20,7 @@
         * [Logging errors](#logging-errors)
     * [Authentication](#authentication)
         * [Default usage](#auth-default-usage)
+        * [Using a JWKS endpoint](#jwks-url)
         * [Supported algorithms](#supported-algorithms)
         * [Accessing the authenticated user](#accessing-the-authenticated-user)
         * [Custom token decoder](#custom-token-decoder)
@@ -462,25 +463,77 @@ $app->add(
 );
 ```
 
+<div id='jwks-url'></div>
+
+#### Using a JWKS endpoint
+
+In a microservices architecture, the Identity Provider (IdP) typically exposes its public keys through a
+[JWKS](https://datatracker.ietf.org/doc/html/rfc7517) endpoint. The middleware can fetch the public key directly from
+this endpoint, eliminating the need to manually distribute key material across services.
+
+```php
+use Skedli\HttpMiddleware\AuthenticationMiddleware;
+
+$middleware = AuthenticationMiddleware::create()
+    ->withJwksUrl(jwksUrl: 'http://identity-web/v1/keys/public')
+    ->build();
+```
+
+The middleware fetches the JWKS, extracts the first RSA key, converts it to PEM format, and uses it for token
+validation. The algorithm defaults to `RS256` when not explicitly set.
+
+You can also override the algorithm if needed:
+
+```php
+use Skedli\HttpMiddleware\AuthenticationMiddleware;
+use Skedli\HttpMiddleware\SigningAlgorithm;
+
+$middleware = AuthenticationMiddleware::create()
+    ->withJwksUrl(jwksUrl: 'http://identity-web/v1/keys/public')
+    ->withAlgorithm(algorithm: SigningAlgorithm::RS512)
+    ->build();
+```
+
+In a Slim 4 application with an environment variable:
+
+```php
+use Skedli\HttpMiddleware\AuthenticationMiddleware;
+use TinyBlocks\EnvironmentVariable\EnvironmentVariable;
+
+$jwksUrl = EnvironmentVariable::from(name: 'IDENTITY_JWKS_URL')->toString();
+
+$app->add(
+    AuthenticationMiddleware::create()
+        ->withJwksUrl(jwksUrl: $jwksUrl)
+        ->build()
+);
+```
+
+When the JWKS endpoint is unreachable or returns an invalid response, a `TokenValidationFailed` exception is thrown
+at build time with a descriptive error message.
+
 When authentication fails, the middleware returns a `401 Unauthorized` response:
 
 ```json
 {
-    "code": "UNAUTHORIZED",
+    "code": "TOKEN_VALIDATION_FAILED",
     "message": "Token has expired."
 }
 ```
 
 Possible error messages:
 
-| Message                                        | Cause                                                  |
-|------------------------------------------------|--------------------------------------------------------|
-| `Missing Authorization header.`                | The request has no `Authorization` header              |
-| `Authorization header must use Bearer scheme.` | The header does not start with `Bearer `               |
-| `Bearer token is empty.`                       | The header is `Bearer` with no token value             |
-| `Token is invalid or could not be decoded.`    | The token is malformed or the signature does not match |
-| `Token has expired.`                           | The token `exp` claim is in the past                   |
-| `Token is missing the subject (sub) claim.`    | The token has no `sub` claim                           |
+| Message                                                 | Cause                                                  |
+|---------------------------------------------------------|--------------------------------------------------------|
+| `Missing Authorization header.`                         | The request has no `Authorization` header              |
+| `Authorization header must use Bearer scheme.`          | The header does not start with `Bearer `               |
+| `Bearer token is empty.`                                | The header is `Bearer` with no token value             |
+| `Token is invalid or could not be decoded.`             | The token is malformed or the signature does not match |
+| `Token has expired.`                                    | The token `exp` claim is in the past                   |
+| `Token is missing the subject (sub) claim.`             | The token has no `sub` claim                           |
+| `Failed to fetch JWKS from <url>: <reason>.`            | The JWKS endpoint is unreachable                       |
+| `Invalid JWKS response from <url>.`                     | The JWKS JSON has no keys                              |
+| `JWKS response does not contain a valid RSA key (...).` | The JWKS key is missing the `n` or `e` fields          |
 
 <div id='supported-algorithms'></div>
 
@@ -626,22 +679,28 @@ $user->roles();    # ["admin", "billing"]
 
 #### Builder precedence
 
-When both a custom `TokenDecoder` and key material are provided, the custom decoder **always takes precedence**.
-The key material and algorithm are ignored:
+When multiple configuration options are provided, the builder resolves them in this order:
+
+| Priority | Configuration                                 | Behavior                                         |
+|----------|-----------------------------------------------|--------------------------------------------------|
+| 1st      | `withTokenDecoder(...)`                       | Custom decoder wins everything else is ignored   |
+| 2nd      | `withJwksUrl(...)`                            | Fetches JWKS, converts to PEM, defaults to RS256 |
+| 3rd      | `withKeyMaterial(...)` + `withAlgorithm(...)` | Uses PEM and algorithm directly                  |
 
 ```php
 use Skedli\HttpMiddleware\AuthenticationMiddleware;
 use Skedli\HttpMiddleware\SigningAlgorithm;
 
-// The custom decoder wins — key material and algorithm are ignored.
+// The custom decoder wins, JWKS URL, key material, and algorithm are ignored.
 $middleware = AuthenticationMiddleware::create()
+    ->withJwksUrl(jwksUrl: 'http://identity-web/v1/keys/public')
     ->withAlgorithm(algorithm: SigningAlgorithm::RS256)
     ->withKeyMaterial(keyMaterial: $publicKey)
     ->withTokenDecoder(tokenDecoder: $customDecoder)
     ->build();
 ```
 
-Building the middleware without a `TokenDecoder` or key material throws a `TokenValidationFailed` exception.
+Building the middleware without a `TokenDecoder`, key material, or JWKS URL throws a `TokenValidationFailed` exception.
 Using key material without an algorithm also throws.
 
 <div id='license'></div>

@@ -5,14 +5,22 @@ declare(strict_types=1);
 namespace Skedli\HttpMiddleware\Internal\Authentication;
 
 use Skedli\HttpMiddleware\AuthenticationMiddleware;
+use Skedli\HttpMiddleware\Internal\Authentication\Jwks\JwksPublicKeyResolver;
 use Skedli\HttpMiddleware\SigningAlgorithm;
 use Skedli\HttpMiddleware\TokenDecoder;
 
 final class AuthenticationMiddlewareBuilder
 {
+    private ?string $jwksUrl = null;
     private ?SigningAlgorithm $algorithm = null;
     private ?string $keyMaterial = null;
     private ?TokenDecoder $tokenDecoder = null;
+
+    public function withJwksUrl(string $jwksUrl): AuthenticationMiddlewareBuilder
+    {
+        $this->jwksUrl = $jwksUrl;
+        return $this;
+    }
 
     public function withAlgorithm(SigningAlgorithm $algorithm): AuthenticationMiddlewareBuilder
     {
@@ -38,8 +46,14 @@ final class AuthenticationMiddlewareBuilder
             return AuthenticationMiddleware::build(tokenDecoder: $this->tokenDecoder);
         }
 
+        if (!is_null($this->jwksUrl)) {
+            $this->algorithm = SigningAlgorithm::RS256;
+            $this->keyMaterial = JwksPublicKeyResolver::from(jwksUrl: $this->jwksUrl)->resolve();
+        }
+
         if (is_null($this->keyMaterial)) {
-            $reason = 'A TokenDecoder instance or key material must be provided to build the AuthenticationMiddleware.';
+            $reason = 'A TokenDecoder instance, key material, ';
+            $reason .= 'or a JWKS URL must be provided to build the AuthenticationMiddleware.';
             throw TokenValidationFailed::withReason(reason: $reason);
         }
 

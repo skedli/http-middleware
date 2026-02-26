@@ -45,16 +45,18 @@
     },
     "require": {
         "php": "^8.5",
+        "ext-sodium": "*",
         "firebase/php-jwt": "^7.0",
-        "ramsey/uuid": "^4.7",
+        "ramsey/uuid": "^4.9",
         "psr/http-message": "^2.0",
         "tiny-blocks/http": "^4.8",
-        "tiny-blocks/logger": "^1.1",
+        "tiny-blocks/logger": "^1.2",
         "psr/http-server-handler": "^1.0",
         "psr/http-server-middleware": "^1.0",
         "tiny-blocks/environment-variable": "^1.2"
     },
     "require-dev": {
+        "ext-posix": "*",
         "ext-openssl": "*",
         "guzzlehttp/psr7": "^2.7",
         "phpunit/phpunit": "^11.5",
@@ -79,6 +81,9 @@
         ],
         "tests-no-coverage": [
             "@test-no-coverage"
+        ],
+        "tests-no-mutation": [
+            "@test"
         ]
     }
 }
