@@ -48,7 +48,8 @@
         "tiny-blocks/http": "^4.8",
         "tiny-blocks/logger": "^1.1",
         "psr/http-server-handler": "^1.0",
-        "psr/http-server-middleware": "^1.0"
+        "psr/http-server-middleware": "^1.0",
+        "tiny-blocks/environment-variable": "^1.2"
     },
     "require-dev": {
         "guzzlehttp/psr7": "^2.7",
