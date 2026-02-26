@@ -266,6 +266,9 @@ If the `CorrelationIdMiddleware` is not registered, the `LogMiddleware` works no
 The `ErrorMiddleware` catches uncaught exceptions during request processing and transforms them into structured JSON
 responses. Error logging and response detail exposure are fully configurable through `ErrorHandlingSettings`.
 
+When used together with the `CorrelationIdMiddleware`, the `ErrorMiddleware` automatically binds the correlation ID
+to the error log context. No additional configuration is needed, just register both middleware in the correct order.
+
 <div id='error-default-usage'></div>
 
 #### Default usage
@@ -297,9 +300,9 @@ Use `ErrorHandlingSettings` to control how errors are displayed and logged:
 
 | Setting               | Default | Description                                                                |
 |-----------------------|---------|----------------------------------------------------------------------------|
-| `displayErrorDetails` | `false` | Includes exception class, file, line, and stack trace in the response body |
 | `logErrors`           | `false` | Enables logging of exceptions when a logger is provided                    |
 | `logErrorDetails`     | `false` | Includes exception class, file, line, and stack trace in the log context   |
+| `displayErrorDetails` | `false` | Includes exception class, file, line, and stack trace in the response body |
 
 **Development** full visibility in response and logs:
 
@@ -332,6 +335,12 @@ Response body:
 }
 ```
 
+Log output:
+
+```
+correlation_id=550e8400-e29b-41d4-a716-446655440000 level=ERROR key=error data={"message":"Unexpected database error","exception":"RuntimeException","file":"/app/src/...","line":42,"trace":"#0 /app/src/..."}
+```
+
 **Production** log with details, minimal response:
 
 ```php
@@ -359,7 +368,7 @@ Response body:
 Log output:
 
 ```
-level=ERROR key=Unexpected database error data={"exception":"RuntimeException","file":"/app/src/...","line":42,"trace":"#0 /app/src/..."}
+correlation_id=550e8400-e29b-41d4-a716-446655440000 level=ERROR key=error data={"message":"Unexpected database error","exception":"RuntimeException","file":"/app/src/...","line":42,"trace":"#0 /app/src/..."}
 ```
 
 <div id='logging-errors'></div>
@@ -386,8 +395,10 @@ $middleware = ErrorMiddleware::create()
 Log output:
 
 ```
-level=ERROR key=Unexpected database error data={}
+correlation_id=550e8400-e29b-41d4-a716-446655440000 level=ERROR key=error data={"message":"Unexpected database error"}
 ```
+
+If the `CorrelationIdMiddleware` is not registered, the `ErrorMiddleware` works normally without the correlation ID.
 
 <div id='license'></div>
 
