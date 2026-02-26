@@ -13,6 +13,7 @@ use Skedli\HttpMiddleware\Internal\Authentication\TokenValidationFailed;
 use Skedli\HttpMiddleware\SigningAlgorithm;
 use Skedli\HttpMiddleware\TokenDecoder;
 use Test\Skedli\HttpMiddleware\Mocks\CapturingHandler;
+use Test\Skedli\HttpMiddleware\Mocks\JwksServerMock;
 use TinyBlocks\Http\Code;
 
 final class AuthenticationMiddlewareTest extends TestCase
@@ -283,7 +284,7 @@ final class AuthenticationMiddlewareTest extends TestCase
 
     public function testReturnsUnauthorizedWhenTokenIsMissingSubjectClaim(): void
     {
-        /** @Given a JWT token without the sub claim */
+        /** @Given a JWT token without the subclaim */
         $token = JWT::encode(
             payload: [
                 'iat' => time(),
@@ -476,11 +477,13 @@ final class AuthenticationMiddlewareTest extends TestCase
         self::assertSame('decoder-wins', $authenticatedUser->userId());
     }
 
-    public function testThrowsWhenBuiltWithoutTokenDecoderOrKeyMaterial(): void
+    public function testThrowsWhenBuiltWithoutTokenDecoderOrKeyMaterialOrJwksUrl(): void
     {
         /** @Given a builder without any configuration */
         $this->expectException(TokenValidationFailed::class);
-        $this->expectExceptionMessage('A TokenDecoder instance or key material must be provided');
+        $this->expectExceptionMessage(
+            'A TokenDecoder instance, key material, or a JWKS URL must be provided to build the AuthenticationMiddleware.'
+        );
 
         /** @When the builder attempts to build the middleware */
         AuthenticationMiddleware::create()->build();
@@ -532,5 +535,196 @@ final class AuthenticationMiddlewareTest extends TestCase
         $body = json_decode((string)$response->getBody(), true);
         self::assertSame('UNAUTHORIZED', $body['code']);
         self::assertSame('Custom validation failed.', $body['message']);
+    }
+
+    public function testAuthenticatesValidTokenUsingJwksUrl(): void
+    {
+        /** @Given a fake JWKS server serving the test public key */
+        $jwksUrl = JwksServerMock::start(publicKeyPem: $this->publicKey);
+
+        /** @And a valid JWT token signed with the matching private key */
+        $issuedAt = time();
+        $expiresAt = $issuedAt + 3600;
+        $userId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+
+        $token = JWT::encode(
+            payload: ['sub' => $userId, 'iat' => $issuedAt, 'exp' => $expiresAt],
+            key: $this->privateKey,
+            alg: 'RS256'
+        );
+
+        /** @And a request with the valid Bearer token */
+        $request = new ServerRequest('GET', '/', ['Authorization' => "Bearer $token"]);
+
+        /** @And a middleware configured with the JWKS URL */
+        $middleware = AuthenticationMiddleware::create()
+            ->withJwksUrl(jwksUrl: $jwksUrl)
+            ->build();
+
+        /** @And a handler that captures the request */
+        $handler = new CapturingHandler();
+
+        /** @When the middleware processes the request */
+        $response = $middleware->process($request, $handler);
+
+        /** @Then the response should be 200 OK */
+        self::assertSame(Code::OK->value, $response->getStatusCode());
+
+        /** @And the authenticated user should be propagated as a request attribute */
+        $authenticatedUser = $handler->capturedAuthenticatedUser();
+
+        self::assertNotNull($authenticatedUser);
+        self::assertInstanceOf(AuthenticatedUser::class, $authenticatedUser);
+        self::assertSame($userId, $authenticatedUser->userId());
+        self::assertSame($issuedAt, $authenticatedUser->issuedAt());
+        self::assertSame($expiresAt, $authenticatedUser->expiresAt());
+
+        JwksServerMock::stop();
+    }
+
+    public function testJwksUrlDefaultsToRs256Algorithm(): void
+    {
+        /** @Given a fake JWKS server serving the test public key */
+        $jwksUrl = JwksServerMock::start(publicKeyPem: $this->publicKey);
+
+        /** @And a valid RS256-signed token */
+        $token = JWT::encode(
+            payload: ['sub' => 'user-rs256', 'iat' => time(), 'exp' => time() + 3600],
+            key: $this->privateKey,
+            alg: 'RS256'
+        );
+
+        /** @And a request with the valid Bearer token */
+        $request = new ServerRequest('GET', '/', ['Authorization' => "Bearer $token"]);
+
+        /** @And a middleware configured with only the JWKS URL (no explicit algorithm) */
+        $middleware = AuthenticationMiddleware::create()
+            ->withJwksUrl(jwksUrl: $jwksUrl)
+            ->build();
+
+        /** @And a handler that captures the request */
+        $handler = new CapturingHandler();
+
+        /** @When the middleware processes the request */
+        $response = $middleware->process($request, $handler);
+
+        /** @Then the response should be 200 OK (RS256 was inferred) */
+        self::assertSame(Code::OK->value, $response->getStatusCode());
+
+        /** @And the authenticated user should be correctly extracted */
+        $authenticatedUser = $handler->capturedAuthenticatedUser();
+
+        self::assertNotNull($authenticatedUser);
+        self::assertSame('user-rs256', $authenticatedUser->userId());
+
+        JwksServerMock::stop();
+    }
+
+    public function testThrowsWhenJwksUrlIsUnreachable(): void
+    {
+        /** @Given a JWKS URL that does not exist */
+        $this->expectException(TokenValidationFailed::class);
+        $this->expectExceptionMessage('Failed to fetch JWKS from');
+
+        /** @When the builder attempts to build the middleware with the unreachable URL */
+        AuthenticationMiddleware::create()
+            ->withJwksUrl(jwksUrl: 'http://127.0.0.1:19999/nonexistent-jwks')
+            ->build();
+    }
+
+    public function testTokenDecoderPrecedesJwksUrlConfiguration(): void
+    {
+        /** @Given a custom authenticated user */
+        $expectedUser = new readonly class implements AuthenticatedUser {
+            public function userId(): string
+            {
+                return 'decoder-wins-over-jwks';
+            }
+
+            public function issuedAt(): int
+            {
+                return 100;
+            }
+
+            public function expiresAt(): int
+            {
+                return 999;
+            }
+        };
+
+        /** @And a custom token decoder */
+        $customDecoder = new readonly class ($expectedUser) implements TokenDecoder {
+            public function __construct(private AuthenticatedUser $authenticatedUser)
+            {
+            }
+
+            public function decode(string $token): AuthenticatedUser
+            {
+                return $this->authenticatedUser;
+            }
+        };
+
+        /** @And a middleware configured with both a custom decoder and a JWKS URL */
+        $middleware = AuthenticationMiddleware::create()
+            ->withTokenDecoder($customDecoder)
+            ->withJwksUrl(jwksUrl: 'http://127.0.0.1:19999/should-not-be-called')
+            ->build();
+
+        /** @And a request with any Bearer token */
+        $request = new ServerRequest('GET', '/', ['Authorization' => 'Bearer irrelevant-token']);
+
+        /** @And a handler that captures the request */
+        $handler = new CapturingHandler();
+
+        /** @When the middleware processes the request */
+        $response = $middleware->process($request, $handler);
+
+        /** @Then the custom decoder should take precedence over JWKS */
+        self::assertSame(Code::OK->value, $response->getStatusCode());
+
+        $authenticatedUser = $handler->capturedAuthenticatedUser();
+
+        self::assertNotNull($authenticatedUser);
+        self::assertSame('decoder-wins-over-jwks', $authenticatedUser->userId());
+    }
+
+    public function testThrowsWhenJwksResponseHasNoKeys(): void
+    {
+        /** @Given a JWKS server that returns a valid JSON with an empty keys array */
+        $jwksUrl = JwksServerMock::startWithRawJson(json: '{"keys": []}');
+
+        /** @Then a TokenValidationFailed exception should be thrown */
+        $this->expectException(TokenValidationFailed::class);
+        $this->expectExceptionMessage('Invalid JWKS response from');
+
+        try {
+            /** @When the builder attempts to build the middleware with the JWKS URL */
+            AuthenticationMiddleware::create()
+                ->withJwksUrl(jwksUrl: $jwksUrl)
+                ->build();
+        } finally {
+            JwksServerMock::stop();
+        }
+    }
+
+    public function testThrowsWhenJwksKeyIsMissingRsaComponents(): void
+    {
+        /** @Given a JWKS server that returns a key without the modulus (n) and exponent (e) */
+        $jwksUrl = JwksServerMock::startWithRawJson(
+            json: '{"keys": [{"kty": "RSA", "use": "sig"}]}'
+        );
+
+        /** @Then a TokenValidationFailed exception should be thrown */
+        $this->expectException(TokenValidationFailed::class);
+        $this->expectExceptionMessage('JWKS response does not contain a valid RSA key (missing n or e).');
+
+        try {
+            /** @When the builder attempts to build the middleware with the JWKS URL */
+            AuthenticationMiddleware::create()
+                ->withJwksUrl(jwksUrl: $jwksUrl)
+                ->build();
+        } finally {
+            JwksServerMock::stop();
+        }
     }
 }
