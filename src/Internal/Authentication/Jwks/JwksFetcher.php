@@ -5,10 +5,21 @@ declare(strict_types=1);
 namespace Skedli\HttpMiddleware\Internal\Authentication\Jwks;
 
 use Skedli\HttpMiddleware\Internal\Authentication\TokenValidationFailed;
+use Skedli\HttpMiddleware\Internal\HttpStreamContext;
+use Skedli\HttpMiddleware\Internal\HttpTimeout;
 
 final readonly class JwksFetcher
 {
-    public static function fetchFrom(string $url): array
+    private function __construct(private HttpStreamContext $context)
+    {
+    }
+
+    public static function using(HttpTimeout $timeout): JwksFetcher
+    {
+        return new JwksFetcher(context: HttpStreamContext::from(timeout: $timeout));
+    }
+
+    public function fetchFrom(string $url): array
     {
         $errorMessage = '';
 
@@ -18,7 +29,7 @@ final readonly class JwksFetcher
         });
 
         try {
-            $json = file_get_contents($url);
+            $json = file_get_contents($url, false, $this->context->toResource());
         } finally {
             restore_error_handler();
         }

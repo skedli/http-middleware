@@ -10,6 +10,7 @@ use PHPUnit\Framework\TestCase;
 use Skedli\HttpMiddleware\AuthenticatedUser;
 use Skedli\HttpMiddleware\AuthenticationMiddleware;
 use Skedli\HttpMiddleware\Internal\Authentication\TokenValidationFailed;
+use Skedli\HttpMiddleware\Internal\HttpTimeout;
 use Skedli\HttpMiddleware\SigningAlgorithm;
 use Skedli\HttpMiddleware\TokenDecoder;
 use Test\Skedli\HttpMiddleware\Mocks\CapturingHandler;
@@ -625,13 +626,101 @@ final class AuthenticationMiddlewareTest extends TestCase
     public function testThrowsWhenJwksUrlIsUnreachable(): void
     {
         /** @Given a JWKS URL that does not exist */
-        $this->expectException(TokenValidationFailed::class);
-        $this->expectExceptionMessage('Failed to fetch JWKS from');
-
-        /** @When the builder attempts to build the middleware with the unreachable URL */
-        AuthenticationMiddleware::create()
+        $middleware = AuthenticationMiddleware::create()
             ->withJwksUrl(jwksUrl: 'http://127.0.0.1:19999/nonexistent-jwks')
             ->build();
+
+        /** @And a request with a Bearer token */
+        $request = new ServerRequest('GET', '/', ['Authorization' => 'Bearer some-token']);
+
+        /** @And a handler that captures the request */
+        $handler = new CapturingHandler();
+
+        /** @When the middleware processes the request */
+        $response = $middleware->process($request, $handler);
+
+        /** @Then the response should be 401 Unauthorized */
+        self::assertSame(Code::UNAUTHORIZED->value, $response->getStatusCode());
+
+        /** @And the handler should not have been called */
+        self::assertNull($handler->capturedAuthenticatedUser());
+
+        /** @And the response body should indicate the JWKS fetch failure */
+        $body = json_decode((string)$response->getBody(), true);
+        self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
+        self::assertStringContainsString('Failed to fetch JWKS from', $body['message']);
+    }
+
+    public function testThrowsWhenJwksResponseHasNoKeys(): void
+    {
+        /** @Given a JWKS server that returns a valid JSON with an empty keys array */
+        $jwksUrl = JwksServerMock::startWithRawJson(json: '{"keys": []}');
+
+        try {
+            /** @And a middleware configured with the JWKS URL */
+            $middleware = AuthenticationMiddleware::create()
+                ->withJwksUrl(jwksUrl: $jwksUrl)
+                ->build();
+
+            /** @And a request with a Bearer token */
+            $request = new ServerRequest('GET', '/', ['Authorization' => 'Bearer some-token']);
+
+            /** @And a handler that captures the request */
+            $handler = new CapturingHandler();
+
+            /** @When the middleware processes the request */
+            $response = $middleware->process($request, $handler);
+
+            /** @Then the response should be 401 Unauthorized */
+            self::assertSame(Code::UNAUTHORIZED->value, $response->getStatusCode());
+
+            /** @And the handler should not have been called */
+            self::assertNull($handler->capturedAuthenticatedUser());
+
+            /** @And the response body should indicate invalid JWKS */
+            $body = json_decode((string)$response->getBody(), true);
+            self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
+            self::assertStringContainsString('Invalid JWKS response from', $body['message']);
+        } finally {
+            JwksServerMock::stop();
+        }
+    }
+
+    public function testThrowsWhenJwksKeyIsMissingRsaComponents(): void
+    {
+        /** @Given a JWKS server that returns a key without the modulus (n) and exponent (e) */
+        $jwksUrl = JwksServerMock::startWithRawJson(
+            json: '{"keys": [{"kty": "RSA", "use": "sig"}]}'
+        );
+
+        try {
+            /** @And a middleware configured with the JWKS URL */
+            $middleware = AuthenticationMiddleware::create()
+                ->withJwksUrl(jwksUrl: $jwksUrl)
+                ->build();
+
+            /** @And a request with a Bearer token */
+            $request = new ServerRequest('GET', '/', ['Authorization' => 'Bearer some-token']);
+
+            /** @And a handler that captures the request */
+            $handler = new CapturingHandler();
+
+            /** @When the middleware processes the request */
+            $response = $middleware->process($request, $handler);
+
+            /** @Then the response should be 401 Unauthorized */
+            self::assertSame(Code::UNAUTHORIZED->value, $response->getStatusCode());
+
+            /** @And the handler should not have been called */
+            self::assertNull($handler->capturedAuthenticatedUser());
+
+            /** @And the response body should indicate missing RSA components */
+            $body = json_decode((string)$response->getBody(), true);
+            self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
+            self::assertSame('JWKS response does not contain a valid RSA key (missing n or e).', $body['message']);
+        } finally {
+            JwksServerMock::stop();
+        }
     }
 
     public function testTokenDecoderPrecedesJwksUrlConfiguration(): void
@@ -690,43 +779,149 @@ final class AuthenticationMiddlewareTest extends TestCase
         self::assertSame('decoder-wins-over-jwks', $authenticatedUser->userId());
     }
 
-    public function testThrowsWhenJwksResponseHasNoKeys(): void
+    public function testReturnsUnauthorizedWhenBearerTokenIsOnlyWhitespace(): void
     {
-        /** @Given a JWKS server that returns a valid JSON with an empty keys array */
-        $jwksUrl = JwksServerMock::startWithRawJson(json: '{"keys": []}');
+        /** @Given a request with a Bearer token that contains only whitespace */
+        $request = new ServerRequest('GET', '/', ['Authorization' => 'Bearer    ']);
 
-        /** @Then a TokenValidationFailed exception should be thrown */
-        $this->expectException(TokenValidationFailed::class);
-        $this->expectExceptionMessage('Invalid JWKS response from');
+        /** @And a middleware configured with HS256 algorithm and secret key */
+        $middleware = AuthenticationMiddleware::create()
+            ->withAlgorithm(SigningAlgorithm::HS256)
+            ->withKeyMaterial(self::SECRET)
+            ->build();
+
+        /** @And a handler that captures the request */
+        $handler = new CapturingHandler();
+
+        /** @When the middleware processes the request */
+        $response = $middleware->process($request, $handler);
+
+        /** @Then the response should be 401 Unauthorized */
+        self::assertSame(Code::UNAUTHORIZED->value, $response->getStatusCode());
+
+        /** @And the handler should not have been called */
+        self::assertNull($handler->capturedAuthenticatedUser());
+
+        /** @And the response body should indicate the token is empty */
+        $body = json_decode((string)$response->getBody(), true);
+        self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
+        self::assertSame('Bearer token is empty.', $body['message']);
+    }
+
+    public function testAuthenticatesValidTokenUsingJwksUrlWithCustomHttpTimeout(): void
+    {
+        /** @Given a fake JWKS server serving the test public key */
+        $jwksUrl = JwksServerMock::start(publicKeyPem: $this->publicKey);
 
         try {
-            /** @When the builder attempts to build the middleware with the JWKS URL */
-            AuthenticationMiddleware::create()
+            /** @And a valid JWT token signed with the matching private key */
+            $issuedAt = time();
+            $expiresAt = $issuedAt + 3600;
+            $userId = 'timeout-user-id';
+
+            $token = JWT::encode(
+                payload: ['sub' => $userId, 'iat' => $issuedAt, 'exp' => $expiresAt],
+                key: $this->privateKey,
+                alg: 'RS256'
+            );
+
+            /** @And a request with the valid Bearer token */
+            $request = new ServerRequest('GET', '/', ['Authorization' => "Bearer $token"]);
+
+            /** @And a middleware configured with a JWKS URL and a custom HTTP timeout */
+            $middleware = AuthenticationMiddleware::create()
                 ->withJwksUrl(jwksUrl: $jwksUrl)
+                ->withHttpTimeout(HttpTimeout::inSeconds(seconds: 10))
                 ->build();
+
+            /** @And a handler that captures the request */
+            $handler = new CapturingHandler();
+
+            /** @When the middleware processes the request */
+            $response = $middleware->process($request, $handler);
+
+            /** @Then the response should be 200 OK */
+            self::assertSame(Code::OK->value, $response->getStatusCode());
+
+            /** @And the authenticated user should be propagated as a request attribute */
+            $authenticatedUser = $handler->capturedAuthenticatedUser();
+
+            self::assertNotNull($authenticatedUser);
+            self::assertSame($userId, $authenticatedUser->userId());
+            self::assertSame($issuedAt, $authenticatedUser->issuedAt());
+            self::assertSame($expiresAt, $authenticatedUser->expiresAt());
         } finally {
             JwksServerMock::stop();
         }
     }
 
-    public function testThrowsWhenJwksKeyIsMissingRsaComponents(): void
+    public function testJwksFetchRespectsCustomHttpTimeout(): void
     {
-        /** @Given a JWKS server that returns a key without the modulus (n) and exponent (e) */
-        $jwksUrl = JwksServerMock::startWithRawJson(
-            json: '{"keys": [{"kty": "RSA", "use": "sig"}]}'
+        /** @Given a JWKS URL pointing to a non-routable address that will hang */
+        $middleware = AuthenticationMiddleware::create()
+            ->withJwksUrl(jwksUrl: 'http://10.255.255.1/jwks')
+            ->withHttpTimeout(HttpTimeout::inSeconds(1))
+            ->build();
+
+        /** @And a request with a Bearer token */
+        $request = new ServerRequest('GET', '/', ['Authorization' => 'Bearer some-token']);
+
+        /** @And a handler that captures the request */
+        $handler = new CapturingHandler();
+
+        /** @When the middleware processes the request, measuring elapsed time */
+        $start = hrtime(true);
+        $response = $middleware->process($request, $handler);
+        $elapsedSeconds = (hrtime(true) - $start) / 1_000_000_000;
+
+        /** @Then the response should be 401 Unauthorized */
+        self::assertSame(Code::UNAUTHORIZED->value, $response->getStatusCode());
+
+        /** @And the fetch should have failed within the timeout window */
+        self::assertLessThan(5, $elapsedSeconds);
+
+        /** @And the response body should indicate the JWKS fetch failure */
+        $body = json_decode((string)$response->getBody(), true);
+        self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
+        self::assertStringContainsString('Failed to fetch JWKS from', $body['message']);
+    }
+
+    public function testJwksKeyIsCachedAcrossMultipleRequests(): void
+    {
+        /** @Given a fake JWKS server serving the test public key */
+        $jwksUrl = JwksServerMock::start(publicKeyPem: $this->publicKey);
+
+        /** @And a middleware configured with the JWKS URL */
+        $middleware = AuthenticationMiddleware::create()
+            ->withJwksUrl(jwksUrl: $jwksUrl)
+            ->build();
+
+        /** @And a valid JWT token signed with the matching private key */
+        $token = JWT::encode(
+            payload: ['sub' => 'cached-user', 'iat' => time(), 'exp' => time() + 3600],
+            key: $this->privateKey,
+            alg: 'RS256'
         );
 
-        /** @Then a TokenValidationFailed exception should be thrown */
-        $this->expectException(TokenValidationFailed::class);
-        $this->expectExceptionMessage('JWKS response does not contain a valid RSA key (missing n or e).');
+        $request = new ServerRequest('GET', '/', ['Authorization' => "Bearer $token"]);
 
-        try {
-            /** @When the builder attempts to build the middleware with the JWKS URL */
-            AuthenticationMiddleware::create()
-                ->withJwksUrl(jwksUrl: $jwksUrl)
-                ->build();
-        } finally {
-            JwksServerMock::stop();
-        }
+        /** @When the middleware processes the first request */
+        $firstHandler = new CapturingHandler();
+        $firstResponse = $middleware->process($request, $firstHandler);
+
+        /** @Then the first request should succeed */
+        self::assertSame(Code::OK->value, $firstResponse->getStatusCode());
+        self::assertSame('cached-user', $firstHandler->capturedAuthenticatedUser()->userId());
+
+        /** @And the JWKS server is stopped, making it unreachable */
+        JwksServerMock::stop();
+
+        /** @When the middleware processes a second request (JWKS server is now down) */
+        $secondHandler = new CapturingHandler();
+        $secondResponse = $middleware->process($request, $secondHandler);
+
+        /** @Then the second request should also succeed, proving the key was cached */
+        self::assertSame(Code::OK->value, $secondResponse->getStatusCode());
+        self::assertSame('cached-user', $secondHandler->capturedAuthenticatedUser()->userId());
     }
 }

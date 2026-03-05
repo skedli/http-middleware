@@ -19,12 +19,12 @@ final readonly class BearerTokenExtractor
             throw TokenValidationFailed::withReason(reason: 'Missing Authorization header.');
         }
 
-        if ($authorizationHeader === self::BEARER_SCHEME) {
-            throw TokenValidationFailed::withReason(reason: 'Bearer token is empty.');
+        if (!str_starts_with($authorizationHeader, self::BEARER_SCHEME)) {
+            throw TokenValidationFailed::withReason(reason: 'Authorization header must use Bearer scheme.');
         }
 
         if (!str_starts_with($authorizationHeader, self::BEARER_PREFIX)) {
-            throw TokenValidationFailed::withReason(reason: 'Authorization header must use Bearer scheme.');
+            throw TokenValidationFailed::withReason(reason: 'Bearer token is empty.');
         }
 
         return substr($authorizationHeader, strlen(self::BEARER_PREFIX));
