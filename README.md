@@ -306,11 +306,11 @@ Response body:
 
 Use `ErrorHandlingSettings` to control how errors are displayed and logged:
 
-| Setting               | Default | Description                                                                |
-|-----------------------|---------|----------------------------------------------------------------------------|
-| `logErrors`           | `false` | Enables logging of exceptions when a logger is provided                    |
-| `logErrorDetails`     | `false` | Includes exception class, file, line, and stack trace in the log context   |
-| `displayErrorDetails` | `false` | Includes exception class, file, line, and stack trace in the response body |
+| Setting               | Default | Description                                                                 |
+|-----------------------|---------|-----------------------------------------------------------------------------|
+| `logErrors`           | `false` | Enables logging of exceptions when a logger is provided.                    |
+| `logErrorDetails`     | `false` | Includes exception class, file, line, and stack trace in the log context.   |
+| `displayErrorDetails` | `false` | Includes exception class, file, line, and stack trace in the response body. |
 
 **Development** full visibility in response and logs:
 
@@ -479,18 +479,19 @@ $middleware = AuthenticationMiddleware::create()
     ->build();
 ```
 
-The middleware fetches the JWKS, extracts the first RSA key, converts it to PEM format, and uses it for token
-validation. The algorithm defaults to `RS256` when not explicitly set.
+The JWKS fetch is **lazy** — no network call is made during `build()`. The public key is resolved on the first incoming
+request and cached for the lifetime of the middleware instance. The algorithm defaults to `RS256` when not explicitly
+set.
 
-You can also override the algorithm if needed:
+By default, the HTTP timeout for the JWKS fetch is **5 seconds**. You can override it with `withHttpTimeout()`:
 
 ```php
 use Skedli\HttpMiddleware\AuthenticationMiddleware;
-use Skedli\HttpMiddleware\SigningAlgorithm;
+use Skedli\HttpMiddleware\Internal\HttpTimeout;
 
 $middleware = AuthenticationMiddleware::create()
     ->withJwksUrl(jwksUrl: 'http://identity-web/v1/keys/public')
-    ->withAlgorithm(algorithm: SigningAlgorithm::RS512)
+    ->withHttpTimeout(httpTimeout: HttpTimeout::inSeconds(10))
     ->build();
 ```
 
@@ -509,8 +510,8 @@ $app->add(
 );
 ```
 
-When the JWKS endpoint is unreachable or returns an invalid response, a `TokenValidationFailed` exception is thrown
-at build time with a descriptive error message.
+When the JWKS endpoint is unreachable or returns an invalid response, the middleware returns a `401 Unauthorized`
+response with a descriptive error message.
 
 When authentication fails, the middleware returns a `401 Unauthorized` response:
 
@@ -523,34 +524,32 @@ When authentication fails, the middleware returns a `401 Unauthorized` response:
 
 Possible error messages:
 
-| Message                                                 | Cause                                                  |
-|---------------------------------------------------------|--------------------------------------------------------|
-| `Missing Authorization header.`                         | The request has no `Authorization` header              |
-| `Authorization header must use Bearer scheme.`          | The header does not start with `Bearer `               |
-| `Bearer token is empty.`                                | The header is `Bearer` with no token value             |
-| `Token is invalid or could not be decoded.`             | The token is malformed or the signature does not match |
-| `Token has expired.`                                    | The token `exp` claim is in the past                   |
-| `Token is missing the subject (sub) claim.`             | The token has no `sub` claim                           |
-| `Failed to fetch JWKS from <url>: <reason>.`            | The JWKS endpoint is unreachable                       |
-| `Invalid JWKS response from <url>.`                     | The JWKS JSON has no keys                              |
-| `JWKS response does not contain a valid RSA key (...).` | The JWKS key is missing the `n` or `e` fields          |
-
-<div id='supported-algorithms'></div>
+| Message                                                 | Cause                                                   |
+|---------------------------------------------------------|---------------------------------------------------------|
+| `Missing Authorization header.`                         | The request has no `Authorization` header.              |
+| `Authorization header must use Bearer scheme.`          | The header does not start with `Bearer `.               |
+| `Bearer token is empty.`                                | The header is `Bearer` with no token value.             |
+| `Token is invalid or could not be decoded.`             | The token is malformed or the signature does not match. |
+| `Token has expired.`                                    | The token `exp` claim is in the past.                   |
+| `Token is missing the subject (sub) claim.`             | The token has no `sub` claim.                           |
+| `Failed to fetch JWKS from <url>: <reason>.`            | The JWKS endpoint is unreachable or timed out.          |
+| `Invalid JWKS response from <url>.`                     | The JWKS JSON has no keys.                              |
+| `JWKS response does not contain a valid RSA key (...).` | The JWKS key is missing the `n` or `e` fields.          |
 
 #### Supported algorithms
 
 The `SigningAlgorithm` enum defines the supported algorithms:
 
-| Algorithm | Type  | Use case                        |
-|-----------|-------|---------------------------------|
-| `RS256`   | RSA   | Asymmetric — public/private key |
-| `RS384`   | RSA   | Asymmetric — public/private key |
-| `RS512`   | RSA   | Asymmetric — public/private key |
-| `HS256`   | HMAC  | Symmetric — shared secret       |
-| `HS384`   | HMAC  | Symmetric — shared secret       |
-| `HS512`   | HMAC  | Symmetric — shared secret       |
-| `ES256`   | ECDSA | Asymmetric — elliptic curve     |
-| `ES384`   | ECDSA | Asymmetric — elliptic curve     |
+| Algorithm | Type  | Use case                         |
+|-----------|-------|----------------------------------|
+| `RS256`   | RSA   | Asymmetric — public/private key. |
+| `RS384`   | RSA   | Asymmetric — public/private key. |
+| `RS512`   | RSA   | Asymmetric — public/private key. |
+| `HS256`   | HMAC  | Symmetric — shared secret.       |
+| `HS384`   | HMAC  | Symmetric — shared secret.       |
+| `HS512`   | HMAC  | Symmetric — shared secret.       |
+| `ES256`   | ECDSA | Asymmetric — elliptic curve.     |
+| `ES384`   | ECDSA | Asymmetric — elliptic curve.     |
 
 <div id='accessing-the-authenticated-user'></div>
 
@@ -681,11 +680,11 @@ $user->roles();    # ["admin", "billing"]
 
 When multiple configuration options are provided, the builder resolves them in this order:
 
-| Priority | Configuration                                 | Behavior                                         |
-|----------|-----------------------------------------------|--------------------------------------------------|
-| 1st      | `withTokenDecoder(...)`                       | Custom decoder wins everything else is ignored   |
-| 2nd      | `withJwksUrl(...)`                            | Fetches JWKS, converts to PEM, defaults to RS256 |
-| 3rd      | `withKeyMaterial(...)` + `withAlgorithm(...)` | Uses PEM and algorithm directly                  |
+| Priority | Configuration                                 | Behavior                                          |
+|----------|-----------------------------------------------|---------------------------------------------------|
+| 1st      | `withTokenDecoder(...)`                       | Custom decoder wins everything else is ignored.   |
+| 2nd      | `withJwksUrl(...)`                            | Fetches JWKS, converts to PEM, defaults to RS256. |
+| 3rd      | `withKeyMaterial(...)` + `withAlgorithm(...)` | Uses PEM and algorithm directly.                  |
 
 ```php
 use Skedli\HttpMiddleware\AuthenticationMiddleware;

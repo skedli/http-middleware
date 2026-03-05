@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace Skedli\HttpMiddleware\Internal\Authentication;
 
 use Skedli\HttpMiddleware\AuthenticationMiddleware;
-use Skedli\HttpMiddleware\Internal\Authentication\Jwks\JwksPublicKeyResolver;
+use Skedli\HttpMiddleware\Internal\Authentication\Jwks\LazyJwksTokenDecoder;
+use Skedli\HttpMiddleware\Internal\HttpTimeout;
 use Skedli\HttpMiddleware\SigningAlgorithm;
 use Skedli\HttpMiddleware\TokenDecoder;
 
@@ -14,6 +15,7 @@ final class AuthenticationMiddlewareBuilder
     private ?string $jwksUrl = null;
     private ?SigningAlgorithm $algorithm = null;
     private ?string $keyMaterial = null;
+    private ?HttpTimeout $httpTimeout = null;
     private ?TokenDecoder $tokenDecoder = null;
 
     public function withJwksUrl(string $jwksUrl): AuthenticationMiddlewareBuilder
@@ -34,6 +36,12 @@ final class AuthenticationMiddlewareBuilder
         return $this;
     }
 
+    public function withHttpTimeout(HttpTimeout $httpTimeout): AuthenticationMiddlewareBuilder
+    {
+        $this->httpTimeout = $httpTimeout;
+        return $this;
+    }
+
     public function withTokenDecoder(TokenDecoder $tokenDecoder): AuthenticationMiddlewareBuilder
     {
         $this->tokenDecoder = $tokenDecoder;
@@ -47,8 +55,12 @@ final class AuthenticationMiddlewareBuilder
         }
 
         if (!is_null($this->jwksUrl)) {
-            $this->algorithm = SigningAlgorithm::RS256;
-            $this->keyMaterial = JwksPublicKeyResolver::from(jwksUrl: $this->jwksUrl)->resolve();
+            $tokenDecoder = new LazyJwksTokenDecoder(
+                jwksUrl: $this->jwksUrl,
+                timeout: $this->httpTimeout ?? HttpTimeout::default()
+            );
+
+            return AuthenticationMiddleware::build(tokenDecoder: $tokenDecoder);
         }
 
         if (is_null($this->keyMaterial)) {
