@@ -7,6 +7,7 @@ namespace Skedli\HttpMiddleware;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use Skedli\HttpMiddleware\Internal\Health\HealthCheckHandlerBuilder;
 use Skedli\HttpMiddleware\Internal\Health\HealthCheckRunner;
 use TinyBlocks\EnvironmentVariable\EnvironmentVariable;
 use TinyBlocks\Http\Code;
@@ -14,11 +15,20 @@ use TinyBlocks\Http\Response;
 
 final readonly class HealthCheckHandler implements RequestHandlerInterface
 {
-    private array $checks;
-
-    public function __construct(HealthCheck ...$checks)
+    /** @param HealthCheck[] $checks */
+    private function __construct(private array $checks)
     {
-        $this->checks = $checks;
+    }
+
+    public static function create(): HealthCheckHandlerBuilder
+    {
+        return new HealthCheckHandlerBuilder();
+    }
+
+    /** @param HealthCheck[] $checks */
+    public static function build(array $checks): HealthCheckHandler
+    {
+        return new HealthCheckHandler(checks: $checks);
     }
 
     public function handle(ServerRequestInterface $request): ResponseInterface
@@ -41,8 +51,6 @@ final readonly class HealthCheckHandler implements RequestHandlerInterface
             $body['checks'] = $report->checks;
         }
 
-        return $report->hasCriticalFailure
-            ? Response::from(code: Code::SERVICE_UNAVAILABLE, body: $body)
-            : Response::ok(body: $body);
+        return Response::from(code: $code, body: $body);
     }
 }

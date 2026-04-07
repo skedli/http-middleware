@@ -29,7 +29,9 @@
     * [Health check](#health-check)
         * [Default usage](#health-default-usage)
         * [Custom health checks](#custom-health-checks)
+        * [Database health check](#database-health-check)
         * [Non-critical checks](#non-critical-checks)
+        * [Using with Slim 4 and DI container](#health-check-slim)
         * [Response format](#response-format)
 * [License](#license)
 
@@ -726,7 +728,7 @@ Without any checks, the handler returns `200 OK` immediately — useful as a bas
 ```php
 use Skedli\HttpMiddleware\HealthCheckHandler;
 
-$handler = new HealthCheckHandler();
+$handler = HealthCheckHandler::create()->build();
 ```
 
 In a Slim 4 application:
@@ -734,7 +736,7 @@ In a Slim 4 application:
 ```php
 use Skedli\HttpMiddleware\HealthCheckHandler;
 
-$app->get('/health', new HealthCheckHandler());
+$app->get('/health', HealthCheckHandler::create()->build());
 ```
 
 Response:
@@ -757,21 +759,21 @@ Implement the `HealthCheck` interface to verify the availability of an external 
 use Skedli\HttpMiddleware\HealthCheck;
 use Skedli\HttpMiddleware\HealthCheckResult;
 
-final readonly class DatabaseHealthCheck implements HealthCheck
+final readonly class RedisHealthCheck implements HealthCheck
 {
-    public function __construct(private PDO $pdo)
+    public function __construct(private Redis $redis)
     {
     }
 
     public function name(): string
     {
-        return 'database';
+        return 'redis';
     }
 
     public function check(): HealthCheckResult
     {
         try {
-            $this->pdo->query('SELECT 1');
+            $this->redis->ping();
             return HealthCheckResult::up();
         } catch (\Throwable $exception) {
             return HealthCheckResult::down(message: $exception->getMessage());
@@ -780,15 +782,15 @@ final readonly class DatabaseHealthCheck implements HealthCheck
 }
 ```
 
-Register the checks in the handler:
+Register the checks using the builder:
 
 ```php
 use Skedli\HttpMiddleware\HealthCheckHandler;
 
-$handler = new HealthCheckHandler(
-    new DatabaseHealthCheck($pdo),
-    new RedisHealthCheck($redis)
-);
+$handler = HealthCheckHandler::create()
+    ->withCheck(check: $databaseCheck)
+    ->withCheck(check: $redisCheck)
+    ->build();
 ```
 
 When all checks are `UP`, the response is `200 OK`:
@@ -836,6 +838,38 @@ When a critical check is `DOWN`, the response is `503 Service Unavailable`:
 
 If a check throws an unhandled exception, it is caught and reported as `DOWN` with the exception message.
 
+<div id='database-health-check'></div>
+
+#### Database health check
+
+The library provides a built-in `DatabaseHealthCheck` that verifies database connectivity via
+[Doctrine DBAL](https://www.doctrine-project.org/projects/dbal.html). It receives a `Connection` instance and
+automatically resolves the check name from the database name.
+
+```php
+use Skedli\HttpMiddleware\DatabaseHealthCheck;
+
+$check = DatabaseHealthCheck::create(connection: $connection)->build();
+```
+
+By default, the check:
+
+- Uses `Connection::getDatabase()` as the check name (falls back to `database` if `null`).
+- Executes `SELECT 1` as the health query.
+- Is marked as `critical: true`.
+
+All defaults can be overridden via the builder:
+
+```php
+use Skedli\HttpMiddleware\DatabaseHealthCheck;
+
+$check = DatabaseHealthCheck::create(connection: $replicaConnection)
+    ->withName(name: 'read-replica')
+    ->withQuery(query: 'SELECT 1 FROM migrations LIMIT 1')
+    ->withCritical(critical: false)
+    ->build();
+```
+
 <div id='non-critical-checks'></div>
 
 #### Non-critical checks
@@ -868,6 +902,39 @@ final readonly class CacheHealthCheck implements HealthCheck
         }
     }
 }
+```
+
+<div id='health-check-slim'></div>
+
+#### Using with Slim 4 and DI container
+
+Since `HealthCheckHandler` uses a private constructor, it integrates cleanly with a DI container. Register the handler
+as a factory, then reference it by class name in the route:
+
+```php
+use Doctrine\DBAL\Connection;
+use Psr\Container\ContainerInterface;
+use Skedli\HttpMiddleware\DatabaseHealthCheck;
+use Skedli\HttpMiddleware\HealthCheckHandler;
+
+// Container definitions (e.g., PHP-DI)
+return [
+    HealthCheckHandler::class => static function (ContainerInterface $container): HealthCheckHandler {
+        $connection = $container->get(Connection::class);
+
+        return HealthCheckHandler::create()
+            ->withCheck(check: DatabaseHealthCheck::create(connection: $connection)->build())
+            ->build();
+    },
+];
+```
+
+Then in your route definitions:
+
+```php
+use Skedli\HttpMiddleware\HealthCheckHandler;
+
+$app->get('[/]', HealthCheckHandler::class);
 ```
 
 <div id='response-format'></div>

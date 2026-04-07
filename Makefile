@@ -34,6 +34,10 @@ test-no-coverage: ## Run all tests without coverage
 review: ## Run static code analysis
 	@${DOCKER_RUN} composer review
 
+.PHONY: fix-review
+fix-review: ## Fix static code analysis issues
+	@${DOCKER_RUN} composer fix-review
+
 .PHONY: show-reports
 show-reports: ## Open static analysis reports (e.g., coverage, lints) in the browser
 	@sensible-browser report/coverage/coverage-html/index.html report/coverage/mutation-report.html

@@ -57,7 +57,7 @@ final class AuthenticationMiddlewareBuilder
         if (!is_null($this->jwksUrl)) {
             $tokenDecoder = new LazyJwksTokenDecoder(
                 jwksUrl: $this->jwksUrl,
-                timeout: $this->httpTimeout ?? HttpTimeout::default()
+                timeout: ($this->httpTimeout ?? HttpTimeout::default())
             );
 
             return AuthenticationMiddleware::build(tokenDecoder: $tokenDecoder);

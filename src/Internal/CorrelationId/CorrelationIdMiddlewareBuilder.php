@@ -20,7 +20,7 @@ final class CorrelationIdMiddlewareBuilder
     public function build(): CorrelationIdMiddleware
     {
         return CorrelationIdMiddleware::build(
-            provider: $this->provider ?? new UuidCorrelationIdProvider()
+            provider: ($this->provider ?? new UuidCorrelationIdProvider())
         );
     }
 }
