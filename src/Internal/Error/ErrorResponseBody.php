@@ -28,6 +28,6 @@ final readonly class ErrorResponseBody
             $body['trace'] = explode("\n", $exception->getTraceAsString());
         }
 
-        return (string)json_encode($body, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        return (string)json_encode($body, (JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
     }
 }

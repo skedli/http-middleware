@@ -23,4 +23,3 @@ final class HealthCheckHandlerBuilder
         return HealthCheckHandler::build(checks: $this->checks);
     }
 }
-

@@ -67,7 +67,8 @@
     },
     "scripts": {
         "test": "php -d memory_limit=2G ./vendor/bin/phpunit --configuration phpunit.xml tests",
-        "phpcs": "php ./vendor/bin/phpcs --standard=PSR12 --extensions=php ./src",
+        "phpcs": "php ./vendor/bin/phpcs --standard=phpcs.xml --extensions=php ./src",
+        "phpcbf": "php ./vendor/bin/phpcbf --standard=phpcs.xml ./src",
         "phpstan": "php ./vendor/bin/phpstan analyse -c phpstan.neon.dist --quiet --no-progress",
         "test-file": "php ./vendor/bin/phpunit --configuration phpunit.xml --no-coverage --filter",
         "mutation-test": "php ./vendor/bin/infection --threads=max --logger-html=report/coverage/mutation-report.html --coverage=report/coverage",
@@ -75,6 +76,9 @@
         "review": [
             "@phpcs",
             "@phpstan"
+        ],
+        "fix-review": [
+            "@phpcbf"
         ],
         "tests": [
             "@test",

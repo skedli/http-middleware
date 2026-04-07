@@ -15,7 +15,7 @@ final class DatabaseHealthCheckBuilder
 
     public function __construct(private readonly Connection $connection)
     {
-        $this->name = $connection->getDatabase() ?? 'database';
+        $this->name = ($connection->getDatabase() ?? 'database');
     }
 
     public function withName(string $name): DatabaseHealthCheckBuilder
@@ -46,4 +46,3 @@ final class DatabaseHealthCheckBuilder
         );
     }
 }
-

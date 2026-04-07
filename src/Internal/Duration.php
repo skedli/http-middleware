@@ -19,13 +19,13 @@ final readonly class Duration
 
     public function stop(): self
     {
-        $elapsed = $this->clock->nanoseconds() - $this->nanoseconds;
+        $elapsed = ($this->clock->nanoseconds() - $this->nanoseconds);
 
         return new Duration(nanoseconds: $elapsed, clock: $this->clock);
     }
 
     public function toMilliseconds(): float
     {
-        return round($this->nanoseconds / self::NANOSECONDS_PER_MILLISECOND, 2);
+        return round(($this->nanoseconds / self::NANOSECONDS_PER_MILLISECOND), 2);
     }
 }
