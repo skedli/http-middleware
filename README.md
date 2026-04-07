@@ -28,6 +28,7 @@
         * [Builder precedence](#builder-precedence)
     * [Health check](#health-check)
         * [Default usage](#health-default-usage)
+        * [Built-in health checks](#built-in-checks)
         * [Custom health checks](#custom-health-checks)
         * [Non-critical checks](#non-critical-checks)
         * [Response format](#response-format)
@@ -746,6 +747,33 @@ Response:
 }
 ```
 
+<div id='built-in-checks'></div>
+
+#### Built-in health checks
+
+##### DatabaseHealthCheck
+
+`DatabaseHealthCheck` verifies database connectivity by executing a `SELECT 1` query via a
+[Doctrine DBAL](https://www.doctrine-project.org/projects/dbal.html) connection. It is critical by default.
+
+```php
+use Doctrine\DBAL\DriverManager;
+use Skedli\HttpMiddleware\DatabaseHealthCheck;
+use Skedli\HttpMiddleware\HealthCheckHandler;
+
+$connection = DriverManager::getConnection(['url' => 'mysql://user:pass@localhost/mydb']);
+
+$handler = new HealthCheckHandler(
+    new DatabaseHealthCheck(connection: $connection),
+);
+```
+
+To make the check non-critical (a `DOWN` result will not affect the HTTP status code):
+
+```php
+new DatabaseHealthCheck(connection: $connection, critical: false)
+```
+
 <div id='custom-health-checks'></div>
 
 #### Custom health checks
@@ -757,21 +785,21 @@ Implement the `HealthCheck` interface to verify the availability of an external 
 use Skedli\HttpMiddleware\HealthCheck;
 use Skedli\HttpMiddleware\HealthCheckResult;
 
-final readonly class DatabaseHealthCheck implements HealthCheck
+final readonly class RedisHealthCheck implements HealthCheck
 {
-    public function __construct(private PDO $pdo)
+    public function __construct(private Redis $redis)
     {
     }
 
     public function name(): string
     {
-        return 'database';
+        return 'redis';
     }
 
     public function check(): HealthCheckResult
     {
         try {
-            $this->pdo->query('SELECT 1');
+            $this->redis->ping();
             return HealthCheckResult::up();
         } catch (\Throwable $exception) {
             return HealthCheckResult::down(message: $exception->getMessage());
@@ -783,11 +811,12 @@ final readonly class DatabaseHealthCheck implements HealthCheck
 Register the checks in the handler:
 
 ```php
+use Skedli\HttpMiddleware\DatabaseHealthCheck;
 use Skedli\HttpMiddleware\HealthCheckHandler;
 
 $handler = new HealthCheckHandler(
-    new DatabaseHealthCheck($pdo),
-    new RedisHealthCheck($redis)
+    new DatabaseHealthCheck(connection: $connection),
+    new RedisHealthCheck($redis),
 );
 ```
 
