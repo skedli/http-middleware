@@ -26,6 +26,11 @@
         * [Custom token decoder](#custom-token-decoder)
         * [Custom authenticated user](#custom-authenticated-user)
         * [Builder precedence](#builder-precedence)
+    * [Health check](#health-check)
+        * [Default usage](#health-default-usage)
+        * [Custom health checks](#custom-health-checks)
+        * [Non-critical checks](#non-critical-checks)
+        * [Response format](#response-format)
 * [License](#license)
 
 <div id='overview'></div>
@@ -33,10 +38,11 @@
 ## Overview
 
 Provides PSR-15 middleware for HTTP requests, including correlation ID propagation, structured request/response logging,
-error handling, and stateless JWT authentication.
+error handling, stateless JWT authentication, and extensible health check support.
 
 Built on top of [PSR-15](https://www.php-fig.org/psr/psr-15) and [PSR-7](https://www.php-fig.org/psr/psr-7), the
-middleware can be used with any framework that supports the `MiddlewareInterface` standard.
+middleware can be used with any framework that supports the `MiddlewareInterface` and `RequestHandlerInterface`
+standards.
 
 <div id='installation'></div>
 
@@ -701,6 +707,189 @@ $middleware = AuthenticationMiddleware::create()
 
 Building the middleware without a `TokenDecoder`, key material, or JWKS URL throws a `TokenValidationFailed` exception.
 Using key material without an algorithm also throws.
+
+<div id='health-check'></div>
+
+### Health check
+
+The `HealthCheckHandler` implements `RequestHandlerInterface` and provides a health check endpoint for your application.
+It supports pluggable infrastructure checks (e.g., database, cache, message broker) through the `HealthCheck` interface.
+
+The handler reads the `APP_NAME` environment variable for the service name (defaults to `app` if not set).
+
+<div id='health-default-usage'></div>
+
+#### Default usage
+
+Without any checks, the handler returns `200 OK` immediately — useful as a basic liveness probe.
+
+```php
+use Skedli\HttpMiddleware\HealthCheckHandler;
+
+$handler = new HealthCheckHandler();
+```
+
+In a Slim 4 application:
+
+```php
+use Skedli\HttpMiddleware\HealthCheckHandler;
+
+$app->get('/health', new HealthCheckHandler());
+```
+
+Response:
+
+```json
+{
+    "status": "OK",
+    "service": "my-app"
+}
+```
+
+<div id='custom-health-checks'></div>
+
+#### Custom health checks
+
+Implement the `HealthCheck` interface to verify the availability of an external dependency. Each check provides a
+`name()` and a `check()` method that returns a `HealthCheckResult`.
+
+```php
+use Skedli\HttpMiddleware\HealthCheck;
+use Skedli\HttpMiddleware\HealthCheckResult;
+
+final readonly class DatabaseHealthCheck implements HealthCheck
+{
+    public function __construct(private PDO $pdo)
+    {
+    }
+
+    public function name(): string
+    {
+        return 'database';
+    }
+
+    public function check(): HealthCheckResult
+    {
+        try {
+            $this->pdo->query('SELECT 1');
+            return HealthCheckResult::up();
+        } catch (\Throwable $exception) {
+            return HealthCheckResult::down(message: $exception->getMessage());
+        }
+    }
+}
+```
+
+Register the checks in the handler:
+
+```php
+use Skedli\HttpMiddleware\HealthCheckHandler;
+
+$handler = new HealthCheckHandler(
+    new DatabaseHealthCheck($pdo),
+    new RedisHealthCheck($redis)
+);
+```
+
+When all checks are `UP`, the response is `200 OK`:
+
+```json
+{
+    "status": "OK",
+    "service": "my-app",
+    "checks": {
+        "database": {
+            "status": "UP",
+            "critical": true,
+            "duration_in_milliseconds": 1.23
+        },
+        "redis": {
+            "status": "UP",
+            "critical": true,
+            "duration_in_milliseconds": 0.45
+        }
+    }
+}
+```
+
+When a critical check is `DOWN`, the response is `503 Service Unavailable`:
+
+```json
+{
+    "status": "Service Unavailable",
+    "service": "my-app",
+    "checks": {
+        "database": {
+            "status": "DOWN",
+            "critical": true,
+            "message": "Connection refused",
+            "duration_in_milliseconds": 102.87
+        },
+        "redis": {
+            "status": "UP",
+            "critical": true,
+            "duration_in_milliseconds": 0.51
+        }
+    }
+}
+```
+
+If a check throws an unhandled exception, it is caught and reported as `DOWN` with the exception message.
+
+<div id='non-critical-checks'></div>
+
+#### Non-critical checks
+
+Checks default to `critical: true`. A non-critical check that is `DOWN` does not affect the HTTP status code — the
+response remains `200 OK`. This is useful for optional dependencies like caches.
+
+```php
+use Skedli\HttpMiddleware\HealthCheck;
+use Skedli\HttpMiddleware\HealthCheckResult;
+
+final readonly class CacheHealthCheck implements HealthCheck
+{
+    public function __construct(private Redis $redis)
+    {
+    }
+
+    public function name(): string
+    {
+        return 'cache';
+    }
+
+    public function check(): HealthCheckResult
+    {
+        try {
+            $this->redis->ping();
+            return HealthCheckResult::up(critical: false);
+        } catch (\Throwable $exception) {
+            return HealthCheckResult::down(critical: false, message: $exception->getMessage());
+        }
+    }
+}
+```
+
+<div id='response-format'></div>
+
+#### Response format
+
+| Condition                        | HTTP Status               |
+|----------------------------------|---------------------------|
+| No checks registered             | `200 OK`                  |
+| All checks `UP`                  | `200 OK`                  |
+| Non-critical check `DOWN`        | `200 OK`                  |
+| Any critical check `DOWN`        | `503 Service Unavailable` |
+| Check throws unhandled exception | `503 Service Unavailable` |
+
+Each check entry in the `checks` object contains:
+
+| Field                      | Type    | Description                                              |
+|----------------------------|---------|----------------------------------------------------------|
+| `status`                   | string  | `UP` or `DOWN`.                                          |
+| `critical`                 | boolean | Whether this check affects the overall HTTP status code. |
+| `message`                  | string  | Present only when the check is `DOWN` with a reason.     |
+| `duration_in_milliseconds` | float   | Time taken to execute the check.                         |
 
 <div id='license'></div>
 
