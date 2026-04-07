@@ -18,7 +18,12 @@
     "mutators": {
         "@default": true,
         "ArrayOneItem": false,
-        "UnwrapFinally": false
+        "UnwrapFinally": false,
+        "FalseValue": {
+            "ignore": [
+                "Skedli\\HttpMiddleware\\Internal\\Authentication\\Jwks\\JwksFetcher::fetchFrom"
+            ]
+        }
     },
     "minCoveredMsi": 100,
     "testFramework": "phpunit"
