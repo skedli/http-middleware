@@ -104,7 +104,7 @@ final class AuthenticationMiddlewareTest extends TestCase
 
         /** @And the response body should indicate the missing header */
         $body = json_decode((string)$response->getBody(), true);
-        self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
+        self::assertSame('UNAUTHORIZED', $body['code']);
         self::assertSame('Missing Authorization header.', $body['message']);
     }
 
@@ -133,7 +133,7 @@ final class AuthenticationMiddlewareTest extends TestCase
 
         /** @And the response body should indicate the wrong scheme */
         $body = json_decode((string)$response->getBody(), true);
-        self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
+        self::assertSame('UNAUTHORIZED', $body['code']);
         self::assertSame('Authorization header must use Bearer scheme.', $body['message']);
     }
 
@@ -162,7 +162,7 @@ final class AuthenticationMiddlewareTest extends TestCase
 
         /** @And the response body should indicate the token is empty */
         $body = json_decode((string)$response->getBody(), true);
-        self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
+        self::assertSame('UNAUTHORIZED', $body['code']);
         self::assertSame('Bearer token is empty.', $body['message']);
     }
 
@@ -191,7 +191,7 @@ final class AuthenticationMiddlewareTest extends TestCase
 
         /** @And the response body should indicate the token is invalid */
         $body = json_decode((string)$response->getBody(), true);
-        self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
+        self::assertSame('UNAUTHORIZED', $body['code']);
         self::assertSame('Token is invalid or could not be decoded.', $body['message']);
     }
 
@@ -231,7 +231,7 @@ final class AuthenticationMiddlewareTest extends TestCase
 
         /** @And the response body should indicate the token expired */
         $body = json_decode((string)$response->getBody(), true);
-        self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
+        self::assertSame('UNAUTHORIZED', $body['code']);
         self::assertSame('Token has expired.', $body['message']);
     }
 
@@ -279,7 +279,7 @@ final class AuthenticationMiddlewareTest extends TestCase
 
         /** @And the response body should indicate validation failure */
         $body = json_decode((string)$response->getBody(), true);
-        self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
+        self::assertSame('UNAUTHORIZED', $body['code']);
         self::assertSame('Token is invalid or could not be decoded.', $body['message']);
     }
 
@@ -318,7 +318,7 @@ final class AuthenticationMiddlewareTest extends TestCase
 
         /** @And the response body should indicate the missing claim */
         $body = json_decode((string)$response->getBody(), true);
-        self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
+        self::assertSame('UNAUTHORIZED', $body['code']);
         self::assertSame('Token is missing the subject (sub) claim.', $body['message']);
     }
 
@@ -534,7 +534,7 @@ final class AuthenticationMiddlewareTest extends TestCase
 
         /** @And the response body should contain the custom error message */
         $body = json_decode((string)$response->getBody(), true);
-        self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
+        self::assertSame('UNAUTHORIZED', $body['code']);
         self::assertSame('Custom validation failed.', $body['message']);
     }
 
@@ -647,7 +647,7 @@ final class AuthenticationMiddlewareTest extends TestCase
 
         /** @And the response body should indicate the JWKS fetch failure */
         $body = json_decode((string)$response->getBody(), true);
-        self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
+        self::assertSame('UNAUTHORIZED', $body['code']);
         self::assertStringContainsString('Failed to fetch JWKS from', $body['message']);
     }
 
@@ -679,7 +679,7 @@ final class AuthenticationMiddlewareTest extends TestCase
 
             /** @And the response body should indicate invalid JWKS */
             $body = json_decode((string)$response->getBody(), true);
-            self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
+            self::assertSame('UNAUTHORIZED', $body['code']);
             self::assertStringContainsString('Invalid JWKS response from', $body['message']);
         } finally {
             JwksServerMock::stop();
@@ -716,7 +716,7 @@ final class AuthenticationMiddlewareTest extends TestCase
 
             /** @And the response body should indicate missing RSA components */
             $body = json_decode((string)$response->getBody(), true);
-            self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
+            self::assertSame('UNAUTHORIZED', $body['code']);
             self::assertSame('JWKS response does not contain a valid RSA key (missing n or e).', $body['message']);
         } finally {
             JwksServerMock::stop();
@@ -804,7 +804,7 @@ final class AuthenticationMiddlewareTest extends TestCase
 
         /** @And the response body should indicate the token is empty */
         $body = json_decode((string)$response->getBody(), true);
-        self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
+        self::assertSame('UNAUTHORIZED', $body['code']);
         self::assertSame('Bearer token is empty.', $body['message']);
     }
 
@@ -882,7 +882,7 @@ final class AuthenticationMiddlewareTest extends TestCase
 
         /** @And the response body should indicate the JWKS fetch failure */
         $body = json_decode((string)$response->getBody(), true);
-        self::assertSame('TOKEN_VALIDATION_FAILED', $body['code']);
+        self::assertSame('UNAUTHORIZED', $body['code']);
         self::assertStringContainsString('Failed to fetch JWKS from', $body['message']);
     }
 
