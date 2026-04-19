@@ -22,7 +22,7 @@ final readonly class ErrorLogger
 
     public function log(Throwable $exception, ServerRequestInterface $request): void
     {
-        if ($this->logger === null || !$this->settings->logErrors) {
+        if (is_null($this->logger) || !$this->settings->logErrors) {
             return;
         }
 

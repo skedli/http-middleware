@@ -15,7 +15,7 @@ final readonly class BearerTokenExtractor
     {
         $authorizationHeader = $request->getHeaderLine('Authorization');
 
-        if (empty($authorizationHeader)) {
+        if ($authorizationHeader === '') {
             throw TokenValidationFailed::withReason(reason: 'Missing Authorization header.');
         }
 

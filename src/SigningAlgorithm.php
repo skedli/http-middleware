@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Skedli\HttpMiddleware;
 
-/**
- * Defines the supported signing algorithms for token validation.
- */
 enum SigningAlgorithm: string
 {
     case RS256 = 'RS256';

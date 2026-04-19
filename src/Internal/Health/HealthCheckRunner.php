@@ -43,7 +43,7 @@ final readonly class HealthCheckRunner
                 'critical' => $result->critical,
             ];
 
-            if ($result->message !== null) {
+            if (!is_null($result->message)) {
                 $entry['message'] = $result->message;
             }
 

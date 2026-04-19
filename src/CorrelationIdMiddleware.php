@@ -33,7 +33,7 @@ final readonly class CorrelationIdMiddleware implements MiddlewareInterface
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
         $headerValue = trim($request->getHeaderLine(self::HEADER_NAME));
-        $correlationId = !empty($headerValue)
+        $correlationId = $headerValue !== ''
             ? UuidCorrelationId::from(value: $headerValue)
             : $this->provider->generate();
 

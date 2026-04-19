@@ -8,12 +8,6 @@ use Doctrine\DBAL\Connection;
 use Skedli\HttpMiddleware\Internal\Health\DatabaseHealthCheckBuilder;
 use Throwable;
 
-/**
- * Health check that verifies database connectivity via Doctrine DBAL.
- *
- * Executes a lightweight query (default: SELECT 1) against the provided
- * connection and reports UP or DOWN accordingly.
- */
 final readonly class DatabaseHealthCheck implements HealthCheck
 {
     private function __construct(

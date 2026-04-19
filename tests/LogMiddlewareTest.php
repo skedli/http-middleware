@@ -127,7 +127,7 @@ final class LogMiddlewareTest extends TestCase
         $handler = new CapturingHandler(response: new Response(200));
 
         /** @And a logger that captures the response context */
-        $logger = $this->createMock(Logger::class);
+        $logger = $this->createStub(Logger::class);
 
         $capturedContext = [];
 
@@ -160,7 +160,7 @@ final class LogMiddlewareTest extends TestCase
         $handler = new CapturingHandler(response: new Response(200));
 
         /** @And a logger that captures the request context */
-        $logger = $this->createMock(Logger::class);
+        $logger = $this->createStub(Logger::class);
 
         $capturedContext = [];
 
@@ -192,7 +192,7 @@ final class LogMiddlewareTest extends TestCase
         $handler = new CapturingHandler(response: new Response(200));
 
         /** @And a logger that captures the request context */
-        $logger = $this->createMock(Logger::class);
+        $logger = $this->createStub(Logger::class);
 
         $capturedContext = [];
 
@@ -223,7 +223,7 @@ final class LogMiddlewareTest extends TestCase
         $handler = new CapturingHandler(response: new Response(201));
 
         /** @And a logger that captures the request context */
-        $logger = $this->createMock(Logger::class);
+        $logger = $this->createStub(Logger::class);
 
         $capturedContext = [];
 
@@ -255,7 +255,7 @@ final class LogMiddlewareTest extends TestCase
         $handler = new CapturingHandler(response: new Response(200));
 
         /** @And a logger that captures the request context */
-        $logger = $this->createMock(Logger::class);
+        $logger = $this->createStub(Logger::class);
 
         $capturedContext = [];
 
@@ -288,7 +288,7 @@ final class LogMiddlewareTest extends TestCase
         );
 
         /** @And a logger that captures the response context */
-        $logger = $this->createMock(Logger::class);
+        $logger = $this->createStub(Logger::class);
 
         $capturedContext = [];
 
@@ -320,7 +320,7 @@ final class LogMiddlewareTest extends TestCase
         $handler = new CapturingHandler(response: new Response(204));
 
         /** @And a logger that captures the response context */
-        $logger = $this->createMock(Logger::class);
+        $logger = $this->createStub(Logger::class);
 
         $capturedContext = [];
 
@@ -352,7 +352,7 @@ final class LogMiddlewareTest extends TestCase
         );
 
         /** @And a logger that captures the response context */
-        $logger = $this->createMock(Logger::class);
+        $logger = $this->createStub(Logger::class);
 
         $capturedContext = [];
 
@@ -387,7 +387,7 @@ final class LogMiddlewareTest extends TestCase
         $handler = new CapturingHandler(response: $expectedResponse);
 
         /** @And a logger */
-        $logger = $this->createMock(Logger::class);
+        $logger = $this->createStub(Logger::class);
 
         /** @And a middleware configured with the logger */
         $middleware = LogMiddleware::create(logger: $logger);
@@ -414,7 +414,7 @@ final class LogMiddlewareTest extends TestCase
         );
 
         /** @And a logger */
-        $logger = $this->createMock(Logger::class);
+        $logger = $this->createStub(Logger::class);
 
         /** @And a middleware configured with the logger */
         $middleware = LogMiddleware::create(logger: $logger);
@@ -429,7 +429,7 @@ final class LogMiddlewareTest extends TestCase
     public function testLogsDifferentHttpMethods(): void
     {
         /** @Given a logger that captures all request contexts */
-        $logger = $this->createMock(Logger::class);
+        $logger = $this->createStub(Logger::class);
 
         $capturedMethods = [];
 
@@ -465,7 +465,7 @@ final class LogMiddlewareTest extends TestCase
         $handler = new CapturingHandler(response: new Response(200));
 
         /** @And a logger that captures the request context */
-        $logger = $this->createMock(Logger::class);
+        $logger = $this->createStub(Logger::class);
 
         $capturedContext = [];
 
@@ -496,7 +496,7 @@ final class LogMiddlewareTest extends TestCase
         $handler = new CapturingHandler(response: new Response(200));
 
         /** @And a logger that captures the response context */
-        $logger = $this->createMock(Logger::class);
+        $logger = $this->createStub(Logger::class);
 
         $capturedContext = [];
 
@@ -523,7 +523,7 @@ final class LogMiddlewareTest extends TestCase
     public function testLogsWithCorrelationIdWhenPresent(): void
     {
         /** @Given a request with a correlation ID attribute */
-        $correlationId = $this->createMock(CorrelationId::class);
+        $correlationId = $this->createStub(CorrelationId::class);
         $correlationId->method('toString')->willReturn('req-abc-123');
 
         $request = new ServerRequest('GET', '/users')

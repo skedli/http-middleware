@@ -16,13 +16,13 @@ final class DatabaseHealthCheckTest extends TestCase
     public function testReturnsUpWhenConnectionIsHealthy(): void
     {
         /** @Given a DBAL connection that responds successfully */
-        $connection = $this->createMock(Connection::class);
+        $connection = $this->createStub(Connection::class);
 
         /** @And the connection reports the database name as "orders" */
         $connection->method('getDatabase')->willReturn('orders');
 
         /** @And the connection executes queries without errors */
-        $connection->method('executeQuery')->willReturn($this->createMock(Result::class));
+        $connection->method('executeQuery')->willReturn($this->createStub(Result::class));
 
         /** @When the health check is built and executed */
         $check = DatabaseHealthCheck::create(connection: $connection)->build();
@@ -46,13 +46,13 @@ final class DatabaseHealthCheckTest extends TestCase
     public function testReturnsUpWithFallbackNameWhenDatabaseNameIsNull(): void
     {
         /** @Given a DBAL connection that returns null for getDatabase */
-        $connection = $this->createMock(Connection::class);
+        $connection = $this->createStub(Connection::class);
 
         /** @And the connection has no database name */
         $connection->method('getDatabase')->willReturn(null);
 
         /** @And the connection executes queries without errors */
-        $connection->method('executeQuery')->willReturn($this->createMock(Result::class));
+        $connection->method('executeQuery')->willReturn($this->createStub(Result::class));
 
         /** @When the health check is built and executed */
         $check = DatabaseHealthCheck::create(connection: $connection)->build();
@@ -70,7 +70,7 @@ final class DatabaseHealthCheckTest extends TestCase
     public function testReturnsDownWhenConnectionFails(): void
     {
         /** @Given a DBAL connection that reports the database name as "orders" */
-        $connection = $this->createMock(Connection::class);
+        $connection = $this->createStub(Connection::class);
 
         /** @And the connection reports the database name */
         $connection->method('getDatabase')->willReturn('orders');
@@ -97,13 +97,13 @@ final class DatabaseHealthCheckTest extends TestCase
     public function testCustomNameAndNonCritical(): void
     {
         /** @Given a DBAL connection that responds successfully */
-        $connection = $this->createMock(Connection::class);
+        $connection = $this->createStub(Connection::class);
 
         /** @And the connection reports the database name */
         $connection->method('getDatabase')->willReturn('orders');
 
         /** @And the connection executes queries without errors */
-        $connection->method('executeQuery')->willReturn($this->createMock(Result::class));
+        $connection->method('executeQuery')->willReturn($this->createStub(Result::class));
 
         /** @When the health check is built with a custom name and non-critical flag */
         $check = DatabaseHealthCheck::create(connection: $connection)
@@ -136,7 +136,7 @@ final class DatabaseHealthCheckTest extends TestCase
         $connection->expects(self::once())
             ->method('executeQuery')
             ->with('SELECT 1 FROM migrations LIMIT 1')
-            ->willReturn($this->createMock(Result::class));
+            ->willReturn($this->createStub(Result::class));
 
         /** @When the health check is built with a custom query */
         $check = DatabaseHealthCheck::create(connection: $connection)
@@ -153,4 +153,3 @@ final class DatabaseHealthCheckTest extends TestCase
         self::assertTrue($result->critical);
     }
 }
-

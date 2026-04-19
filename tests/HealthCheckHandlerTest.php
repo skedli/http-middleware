@@ -7,9 +7,9 @@ namespace Test\Skedli\HttpMiddleware;
 use GuzzleHttp\Psr7\ServerRequest;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
-use Skedli\HttpMiddleware\HealthCheck;
 use Skedli\HttpMiddleware\HealthCheckHandler;
 use Skedli\HttpMiddleware\HealthCheckResult;
+use Test\Skedli\HttpMiddleware\Mocks\HealthCheckMock;
 use TinyBlocks\Http\Code;
 
 final class HealthCheckHandlerTest extends TestCase
@@ -40,11 +40,10 @@ final class HealthCheckHandlerTest extends TestCase
 
     public function testHealthCheckWithAllChecksUp(): void
     {
-        /** @Given a health check with a check that reports UP */
-        $check = $this->createHealthCheck(name: 'database', result: HealthCheckResult::up());
-
-        /** @And the endpoint is built with the check */
-        $endpoint = HealthCheckHandler::create()->withCheck(check: $check)->build();
+        /** @Given a health check endpoint with a check that reports UP */
+        $endpoint = HealthCheckHandler::create()
+            ->withCheck(check: HealthCheckMock::reporting(name: 'database', result: HealthCheckResult::up()))
+            ->build();
 
         /** @When a request is made to the endpoint */
         $response = $endpoint->handle(request: new ServerRequest('GET', '/'));
@@ -70,11 +69,13 @@ final class HealthCheckHandlerTest extends TestCase
 
     public function testHealthCheckWithCriticalCheckDown(): void
     {
-        /** @Given a health check with a critical check that reports DOWN */
-        $check = $this->createHealthCheck(name: 'database', result: HealthCheckResult::down(message: 'Connection refused'));
-
-        /** @And the endpoint is built with the check */
-        $endpoint = HealthCheckHandler::create()->withCheck(check: $check)->build();
+        /** @Given a health check endpoint with a critical check that reports DOWN */
+        $endpoint = HealthCheckHandler::create()
+            ->withCheck(check: HealthCheckMock::reporting(
+                name: 'database',
+                result: HealthCheckResult::down(message: 'Connection refused')
+            ))
+            ->build();
 
         /** @When a request is made to the endpoint */
         $response = $endpoint->handle(request: new ServerRequest('GET', '/'));
@@ -100,11 +101,13 @@ final class HealthCheckHandlerTest extends TestCase
 
     public function testHealthCheckWithNonCriticalCheckDown(): void
     {
-        /** @Given a health check with a non-critical check that reports DOWN */
-        $check = $this->createHealthCheck(name: 'cache', result: HealthCheckResult::down(critical: false, message: 'Cache unavailable'));
-
-        /** @And the endpoint is built with the check */
-        $endpoint = HealthCheckHandler::create()->withCheck(check: $check)->build();
+        /** @Given a health check endpoint with a non-critical check that reports DOWN */
+        $endpoint = HealthCheckHandler::create()
+            ->withCheck(check: HealthCheckMock::reporting(
+                name: 'cache',
+                result: HealthCheckResult::down(critical: false, message: 'Cache unavailable')
+            ))
+            ->build();
 
         /** @When a request is made to the endpoint */
         $response = $endpoint->handle(request: new ServerRequest('GET', '/'));
@@ -127,17 +130,13 @@ final class HealthCheckHandlerTest extends TestCase
 
     public function testHealthCheckWithCheckThrowingException(): void
     {
-        /** @Given a health check that throws an exception */
-        $check = $this->createMock(HealthCheck::class);
-
-        /** @And the check is named "database" */
-        $check->method('name')->willReturn('database');
-
-        /** @And the check throws a RuntimeException */
-        $check->method('check')->willThrowException(new RuntimeException('Connection timed out'));
-
-        /** @And the endpoint is built with the check */
-        $endpoint = HealthCheckHandler::create()->withCheck(check: $check)->build();
+        /** @Given a health check endpoint with a check that throws an exception */
+        $endpoint = HealthCheckHandler::create()
+            ->withCheck(check: HealthCheckMock::throwing(
+                name: 'database',
+                exception: new RuntimeException('Connection timed out')
+            ))
+            ->build();
 
         /** @When a request is made to the endpoint */
         $response = $endpoint->handle(request: new ServerRequest('GET', '/'));
@@ -157,13 +156,5 @@ final class HealthCheckHandlerTest extends TestCase
         /** @And the message should describe the exception */
         self::assertSame('Connection timed out', $body['checks']['database']['message']);
     }
-
-    private function createHealthCheck(string $name, HealthCheckResult $result): HealthCheck
-    {
-        $check = $this->createMock(HealthCheck::class);
-        $check->method('name')->willReturn($name);
-        $check->method('check')->willReturn($result);
-
-        return $check;
-    }
 }
+
