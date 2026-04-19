@@ -85,7 +85,7 @@ final class JwksServerMock
 
     public static function stop(): void
     {
-        if (self::$process !== null) {
+        if (!is_null(self::$process)) {
             proc_terminate(self::$process);
             proc_close(self::$process);
             self::$process = null;

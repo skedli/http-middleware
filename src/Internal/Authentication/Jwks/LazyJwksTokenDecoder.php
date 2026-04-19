@@ -20,15 +20,11 @@ final class LazyJwksTokenDecoder implements TokenDecoder
 
     public function decode(string $token): AuthenticatedUser
     {
-        $this->resolved ??= $this->resolveDecoder();
+        $this->resolved ??= new JwtTokenDecoder(
+            algorithm: SigningAlgorithm::RS256,
+            keyMaterial: JwksPublicKeyResolver::from(jwksUrl: $this->jwksUrl, timeout: $this->timeout)->resolve()
+        );
 
         return $this->resolved->decode(token: $token);
-    }
-
-    private function resolveDecoder(): JwtTokenDecoder
-    {
-        $keyMaterial = JwksPublicKeyResolver::from(jwksUrl: $this->jwksUrl, timeout: $this->timeout)->resolve();
-
-        return new JwtTokenDecoder(algorithm: SigningAlgorithm::RS256, keyMaterial: $keyMaterial);
     }
 }

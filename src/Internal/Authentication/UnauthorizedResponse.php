@@ -21,7 +21,7 @@ final readonly class UnauthorizedResponse
     public function toResponse(): ResponseInterface
     {
         return Response::unauthorized(body: [
-            'code'    => 'TOKEN_VALIDATION_FAILED',
+            'code'    => 'UNAUTHORIZED',
             'message' => $this->message
         ]);
     }
