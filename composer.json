@@ -35,7 +35,7 @@
         "psr/http-server-middleware": "^1.0",
         "ramsey/uuid": "^4.9",
         "tiny-blocks/environment-variable": "^1.2",
-        "tiny-blocks/http": "^4.8",
+        "tiny-blocks/http": "^4.9",
         "tiny-blocks/logger": "^1.3"
     },
     "require-dev": {

@@ -27,12 +27,14 @@
         * [Custom authenticated user](#custom-authenticated-user)
         * [Builder precedence](#builder-precedence)
     * [Health check](#health-check)
-        * [Default usage](#health-default-usage)
-        * [Custom health checks](#custom-health-checks)
-        * [Database health check](#database-health-check)
-        * [Non-critical checks](#non-critical-checks)
-        * [Using with Slim 4 and DI container](#health-check-slim)
-        * [Response format](#response-format)
+        * [Liveness](#liveness)
+        * [Readiness](#readiness)
+            * [Default usage](#readiness-default-usage)
+            * [Custom health checks](#custom-health-checks)
+            * [Database health check](#database-health-check)
+            * [Non-critical checks](#non-critical-checks)
+            * [Drain-aware readiness](#drain-aware-readiness)
+            * [Response format](#readiness-response-format)
 * [License](#license)
 
 <div id='overview'></div>
@@ -714,29 +716,32 @@ Using key material without an algorithm also throws.
 
 ### Health check
 
-The `HealthCheckHandler` implements `RequestHandlerInterface` and provides a health check endpoint for your application.
-It supports pluggable infrastructure checks (e.g., database, cache, message broker) through the `HealthCheck` interface.
+Two separate endpoints are provided: liveness and readiness. The liveness endpoint is queried by the orchestrator
+(e.g., ECS) to decide whether to restart the task; a failure triggers an immediate restart. The readiness endpoint
+is queried by the load balancer (e.g., ALB target health check) to decide routing; a failure removes the task from
+the pool without restarting it. Both endpoints read the `APP_NAME` environment variable for the service name,
+defaulting to `"app"` if not set.
 
-The handler reads the `APP_NAME` environment variable for the service name (defaults to `app` if not set).
+<div id='liveness'></div>
 
-<div id='health-default-usage'></div>
+#### Liveness
 
-#### Default usage
-
-Without any checks, the handler returns `200 OK` immediately — useful as a basic liveness probe.
+The `LivenessHandler` implements `RequestHandlerInterface` and provides a liveness probe endpoint. It always returns
+`200 OK` without executing any dependency checks, making it suitable for ECS liveness probes where a failure triggers
+a task restart.
 
 ```php
-use Skedli\HttpMiddleware\HealthCheckHandler;
+use Skedli\HttpMiddleware\LivenessHandler;
 
-$handler = HealthCheckHandler::create()->build();
+$handler = LivenessHandler::create()->build();
 ```
 
 In a Slim 4 application:
 
 ```php
-use Skedli\HttpMiddleware\HealthCheckHandler;
+use Skedli\HttpMiddleware\LivenessHandler;
 
-$app->get('/health', HealthCheckHandler::create()->build());
+$app->get('/health/liveness', LivenessHandler::create()->build());
 ```
 
 Response:
@@ -748,9 +753,45 @@ Response:
 }
 ```
 
+<div id='readiness'></div>
+
+#### Readiness
+
+The `ReadinessHandler` implements `RequestHandlerInterface` and provides a readiness probe endpoint. It executes
+registered dependency checks (e.g., database, cache, message broker) and returns `200 OK` when all critical checks
+pass, or `503 Service Unavailable` when any critical check fails. When a drain marker file exists, the endpoint
+short-circuits immediately without executing any checks.
+
+<div id='readiness-default-usage'></div>
+
+##### Default usage
+
+At least one check must be registered. Calling `build()` without any check throws `ReadinessMisconfigured`.
+
+```php
+use Skedli\HttpMiddleware\DatabaseHealthCheck;
+use Skedli\HttpMiddleware\ReadinessHandler;
+
+$handler = ReadinessHandler::create()
+    ->withCheck(check: DatabaseHealthCheck::create(connection: $connection)->build())
+    ->build();
+```
+
+In a Slim 4 application:
+
+```php
+use Skedli\HttpMiddleware\DatabaseHealthCheck;
+use Skedli\HttpMiddleware\ReadinessHandler;
+
+$app->get('/health/readiness', ReadinessHandler::create()
+    ->withCheck(check: DatabaseHealthCheck::create(connection: $connection)->build())
+    ->build()
+);
+```
+
 <div id='custom-health-checks'></div>
 
-#### Custom health checks
+##### Custom health checks
 
 Implement the `HealthCheck` interface to verify the availability of an external dependency. Each check provides a
 `name()` and a `check()` method that returns a `HealthCheckResult`.
@@ -758,6 +799,7 @@ Implement the `HealthCheck` interface to verify the availability of an external 
 ```php
 use Skedli\HttpMiddleware\HealthCheck;
 use Skedli\HttpMiddleware\HealthCheckResult;
+use Skedli\HttpMiddleware\ReadinessHandler;
 
 final readonly class RedisHealthCheck implements HealthCheck
 {
@@ -780,16 +822,10 @@ final readonly class RedisHealthCheck implements HealthCheck
         }
     }
 }
-```
 
-Register the checks using the builder:
-
-```php
-use Skedli\HttpMiddleware\HealthCheckHandler;
-
-$handler = HealthCheckHandler::create()
+$handler = ReadinessHandler::create()
     ->withCheck(check: $databaseCheck)
-    ->withCheck(check: $redisCheck)
+    ->withCheck(check: new RedisHealthCheck(redis: $redis))
     ->build();
 ```
 
@@ -840,7 +876,7 @@ If a check throws an unhandled exception, it is caught and reported as `DOWN` wi
 
 <div id='database-health-check'></div>
 
-#### Database health check
+##### Database health check
 
 The library provides a built-in `DatabaseHealthCheck` that verifies database connectivity via
 [Doctrine DBAL](https://www.doctrine-project.org/projects/dbal.html). It receives a `Connection` instance and
@@ -872,7 +908,7 @@ $check = DatabaseHealthCheck::create(connection: $replicaConnection)
 
 <div id='non-critical-checks'></div>
 
-#### Non-critical checks
+##### Non-critical checks
 
 Checks default to `critical: true`. A non-critical check that is `DOWN` does not affect the HTTP status code — the
 response remains `200 OK`. This is useful for optional dependencies like caches.
@@ -904,50 +940,71 @@ final readonly class CacheHealthCheck implements HealthCheck
 }
 ```
 
-<div id='health-check-slim'></div>
+<div id='drain-aware-readiness'></div>
 
-#### Using with Slim 4 and DI container
+##### Drain-aware readiness
 
-Since `HealthCheckHandler` uses a private constructor, it integrates cleanly with a DI container. Register the handler
-as a factory, then reference it by class name in the route:
+Use `withDrainMarker(path: ...)` to configure a sentinel file path. When the file exists, `ReadinessHandler` returns
+`503 Service Unavailable` with `{"reason":"draining"}` immediately, without executing any checks. This short-circuits
+dependency calls during graceful shutdown, saving syscalls while the task drains in-flight requests.
 
 ```php
-use Doctrine\DBAL\Connection;
-use Psr\Container\ContainerInterface;
 use Skedli\HttpMiddleware\DatabaseHealthCheck;
-use Skedli\HttpMiddleware\HealthCheckHandler;
+use Skedli\HttpMiddleware\ReadinessHandler;
 
-// Container definitions (e.g., PHP-DI)
-return [
-    HealthCheckHandler::class => static function (ContainerInterface $container): HealthCheckHandler {
-        $connection = $container->get(Connection::class);
-
-        return HealthCheckHandler::create()
-            ->withCheck(check: DatabaseHealthCheck::create(connection: $connection)->build())
-            ->build();
-    },
-];
+$handler = ReadinessHandler::create()
+    ->withCheck(check: DatabaseHealthCheck::create(connection: $connection)->build())
+    ->withDrainMarker(path: '/tmp/draining')
+    ->build();
 ```
 
-Then in your route definitions:
+When draining, the response is:
 
-```php
-use Skedli\HttpMiddleware\HealthCheckHandler;
-
-$app->get('[/]', HealthCheckHandler::class);
+```json
+{
+    "status": "Service Unavailable",
+    "service": "my-app",
+    "reason": "draining"
+}
 ```
 
-<div id='response-format'></div>
+**Creating the drain marker is the responsibility of the consuming repository**, not this library. The container
+entrypoint script must trap `SIGTERM`, create the sentinel file, then forward the signal to PHP-FPM and wait:
 
-#### Response format
+```sh
+#!/bin/sh
+set -e
+
+DRAIN_FILE="/tmp/draining"
+PHP_FPM_PID=""
+
+cleanup() {
+    touch "$DRAIN_FILE"
+    if [ -n "$PHP_FPM_PID" ]; then
+        kill -TERM "$PHP_FPM_PID"
+        wait "$PHP_FPM_PID"
+    fi
+    rm -f "$DRAIN_FILE"
+}
+
+trap cleanup TERM
+
+php-fpm --nodaemonize &
+PHP_FPM_PID=$!
+wait "$PHP_FPM_PID"
+```
+
+<div id='readiness-response-format'></div>
+
+##### Response format
 
 | Condition                        | HTTP Status               |
 |----------------------------------|---------------------------|
-| No checks registered             | `200 OK`                  |
 | All checks `UP`                  | `200 OK`                  |
 | Non-critical check `DOWN`        | `200 OK`                  |
 | Any critical check `DOWN`        | `503 Service Unavailable` |
 | Check throws unhandled exception | `503 Service Unavailable` |
+| Drain marker file exists         | `503 Service Unavailable` |
 
 Each check entry in the `checks` object contains:
 

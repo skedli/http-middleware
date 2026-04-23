@@ -18,6 +18,7 @@
     "mutators": {
         "@default": true,
         "ArrayOneItem": false,
+        "FunctionCallRemoval": false,
         "UnwrapFinally": false,
         "FalseValue": {
             "ignore": [

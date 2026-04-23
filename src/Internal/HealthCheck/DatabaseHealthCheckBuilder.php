@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Skedli\HttpMiddleware\Internal\Health;
+namespace Skedli\HttpMiddleware\Internal\HealthCheck;
 
 use Doctrine\DBAL\Connection;
 use Skedli\HttpMiddleware\DatabaseHealthCheck;

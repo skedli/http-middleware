@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Skedli\HttpMiddleware;
 
 use Doctrine\DBAL\Connection;
-use Skedli\HttpMiddleware\Internal\Health\DatabaseHealthCheckBuilder;
+use Skedli\HttpMiddleware\Internal\HealthCheck\DatabaseHealthCheckBuilder;
 use Throwable;
 
 final readonly class DatabaseHealthCheck implements HealthCheck
@@ -27,7 +27,7 @@ final readonly class DatabaseHealthCheck implements HealthCheck
         string $name,
         string $query,
         bool $critical,
-        Connection $connection,
+        Connection $connection
     ): DatabaseHealthCheck {
         return new DatabaseHealthCheck(name: $name, query: $query, critical: $critical, connection: $connection);
     }
@@ -43,7 +43,7 @@ final readonly class DatabaseHealthCheck implements HealthCheck
             $this->connection->executeQuery($this->query);
             return HealthCheckResult::up(critical: $this->critical);
         } catch (Throwable $exception) {
-            return HealthCheckResult::down(critical: $this->critical, message: $exception->getMessage());
+            return HealthCheckResult::down(message: $exception->getMessage(), critical: $this->critical);
         }
     }
 }
