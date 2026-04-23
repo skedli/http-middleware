@@ -13,12 +13,12 @@ final readonly class HealthCheckResult
     ) {
     }
 
-    public static function up(bool $critical = true, ?string $message = null): HealthCheckResult
+    public static function up(?string $message = null, bool $critical = true): HealthCheckResult
     {
         return new HealthCheckResult(status: HealthCheckStatus::UP, critical: $critical, message: $message);
     }
 
-    public static function down(bool $critical = true, ?string $message = null): HealthCheckResult
+    public static function down(?string $message = null, bool $critical = true): HealthCheckResult
     {
         return new HealthCheckResult(status: HealthCheckStatus::DOWN, critical: $critical, message: $message);
     }
