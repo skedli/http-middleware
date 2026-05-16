@@ -10,8 +10,7 @@ use Psr\Http\Server\RequestHandlerInterface;
 use Skedli\HttpMiddleware\Internal\HealthCheck\HealthPayload;
 use Skedli\HttpMiddleware\Internal\HealthCheck\LivenessHandlerBuilder;
 use TinyBlocks\EnvironmentVariable\EnvironmentVariable;
-use TinyBlocks\Http\Code;
-use TinyBlocks\Http\Response;
+use TinyBlocks\Http\Server\Response;
 
 final readonly class LivenessHandler implements RequestHandlerInterface
 {
@@ -36,9 +35,6 @@ final readonly class LivenessHandler implements RequestHandlerInterface
             defaultValueIfNotFound: 'app'
         )->toString();
 
-        return Response::from(
-            code: Code::OK,
-            body: HealthPayload::alive(service: $serviceName)->jsonSerialize()
-        );
+        return Response::ok(body: HealthPayload::alive(service: $serviceName)->jsonSerialize());
     }
 }

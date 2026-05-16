@@ -14,8 +14,7 @@ use Skedli\HttpMiddleware\Internal\Error\ErrorMiddlewareBuilder;
 use Skedli\HttpMiddleware\Internal\Error\ErrorResponseBody;
 use Throwable;
 use TinyBlocks\Http\Code;
-use TinyBlocks\Http\ContentType;
-use TinyBlocks\Http\Response;
+use TinyBlocks\Http\Server\Response;
 use TinyBlocks\Logger\Logger;
 
 final readonly class ErrorMiddleware implements MiddlewareInterface
@@ -51,7 +50,7 @@ final readonly class ErrorMiddleware implements MiddlewareInterface
 
             $body = $this->errorResponseBody->build(exception: $exception);
 
-            return Response::from($code, $body, ContentType::applicationJson());
+            return Response::from(body: $body, code: $code);
         }
     }
 }

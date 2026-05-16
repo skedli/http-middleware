@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Skedli\HttpMiddleware\Internal\Log;
 
 use Psr\Http\Message\ServerRequestInterface;
-use TinyBlocks\Http\Request;
+use TinyBlocks\Http\Server\Request;
 
 final readonly class LogRequest
 {
