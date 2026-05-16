@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Skedli\HttpMiddleware\Internal\Authentication;
 
 use Psr\Http\Message\ResponseInterface;
-use TinyBlocks\Http\Response;
+use TinyBlocks\Http\Server\Response;
 
 final readonly class UnauthorizedResponse
 {
